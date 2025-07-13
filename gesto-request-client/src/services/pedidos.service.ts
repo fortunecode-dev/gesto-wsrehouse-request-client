@@ -2,10 +2,10 @@ import { API_URL } from "@/config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { router } from "expo-router";
+
 export const getProducts = async () => {
   try {
     const areaId = await AsyncStorage.getItem('selectedLocal');
-
     const { data } = await axios.get(`${API_URL}/request/products/${areaId}`)
     return data
   } catch (error) {
@@ -13,38 +13,39 @@ export const getProducts = async () => {
     AsyncStorage.removeItem("selectedLocal")
     return []
   }
-
 }
 export const getRequestId = async (userId, areaId) => {
   try {
     const { data } = await axios.get(`${API_URL}/request/${userId}/${areaId}`)
     await AsyncStorage.setItem('requestId', data.id);
+    return data
   } catch (error) {
-
-    return ""
+    return null
   }
 
 }
 export const getProductsSaved = async (url) => {
   try {
-    const param = await AsyncStorage.getItem(url == "request" || url == "checkout" ? 'requestId' : "selectedLocal");
+    const param = await AsyncStorage.getItem(url == "request" ? 'requestId' : "selectedLocal");
     if (param == null)
-      return router.push({ pathname: `${url == "checkout" ? "/pedidos" : "/"}` })
+      return router.push({ pathname: "/" })
     const { data } = await axios.get(`${API_URL}/request/products/saved/${url}/${param}`)
     return data
   } catch (error) {
-    router.push({ pathname: "/" })
     AsyncStorage.removeItem("selectedLocal")
+    AsyncStorage.removeItem("selectedResponsable")
+    AsyncStorage.removeItem("requestId")
+    router.push({ pathname: "/" })
     return []
   }
-
 }
+
 export const getEmployes = async (areaId) => {
   try {
     const { data } = await axios.get(`${API_URL}/get-employes-by-area/${areaId}`)
     return data
   } catch (error) {
-    return []
+    return null
   }
 
 }
@@ -53,7 +54,7 @@ export const getAreas = async () => {
     const { data } = await axios.get(`${API_URL}/areas-local`)
     return data
   } catch (error) {
-    return []
+    return null
   }
 }
 
@@ -75,7 +76,7 @@ export const activateRequest = async () => {
     const response = await axios.post(`${API_URL}/request/send-to-warehouse/${requestId}`);
     return response.data;
   } catch (error) {
-    return []
+     throw JSON.stringify(error)
   }
 };
 
@@ -106,7 +107,7 @@ export const postInicial = async () => {
     const response = await axios.post(`${API_URL}/request/post/initial`, { areaId });
     return response.data;
   } catch (error) {
-    return []
+    throw JSON.stringify(error)
   }
 };
 export const postFinal = async () => {
@@ -114,24 +115,16 @@ export const postFinal = async () => {
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const response = await axios.post(`${API_URL}/request/post/final`, { areaId });
     return response.data;
+  } catch (error) {
+     throw JSON.stringify(error)
+  }
+};
 
-  } catch (error) {
-    return []
-  }
-};
-export const getObservation = async (selectedResponsable, selectedLocal) => {
-  try {
-    const response = await axios.get(`${API_URL}/employe/observation/${selectedLocal}/${selectedResponsable}`);
-    return response.data.observation;
-  } catch (error) {
-    return []
-  }
-};
 export const saveObservation = async (selectedResponsable, selectedLocal,observations) => {
   try {
      const response = await axios.post(`${API_URL}/employe/observation/${selectedLocal}/${selectedResponsable}`,{observations});
     return response.data;
   } catch (error) {
-    return []
+    throw error
   }
 };

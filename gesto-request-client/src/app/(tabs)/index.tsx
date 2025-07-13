@@ -1,7 +1,6 @@
 import {
   getAreas,
   getEmployes,
-  getObservation,
   getRequestId,
   saveObservation
 } from "@/services/pedidos.service";
@@ -10,6 +9,7 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   ScrollView,
@@ -24,6 +24,7 @@ import { useTheme } from "react-native-paper";
 interface Area {
   id: string;
   name: string;
+  local: { name: string }
 }
 
 interface Employee {
@@ -33,14 +34,13 @@ interface Employee {
 
 export default function LocalScreen() {
   const [selectedLocal, setSelectedLocal] = useState<string>('');
-  const [areas, setAreas] = useState<Area[]>([]);
+  const [areas, setAreas] = useState<Area[] | null>(null);
   const [responsables, setResponsables] = useState<Employee[]>([]);
   const [selectedResponsable, setSelectedResponsable] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingEmployees, setLoadingEmployees] = useState<boolean>(false);
   const [observation, setObservation] = useState<string>('');
   const [savingObs, setSavingObs] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
   const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
   const [responsableModalVisible, setResponsableModalVisible] = useState<boolean>(false);
   const { colors } = useTheme();
@@ -55,72 +55,67 @@ export default function LocalScreen() {
           setLoading(true);
           const locals = await getAreas();
           setAreas(locals);
-
-          const savedLocal = await AsyncStorage.getItem('selectedLocal');
-          const savedResponsable = await AsyncStorage.getItem('selectedResponsable');
-          console.log("selectedLocal",selectedLocal)
-          if(selectedLocal)  await AsyncStorage.setItem('selectedLocal',selectedLocal);
-          if(selectedResponsable)  await AsyncStorage.setItem('selectedResponsable',selectedResponsable);
-
+          const savedLocal = await AsyncStorage.getItem('selectedLocal') ?? "";
+          const savedResponsable = await AsyncStorage.getItem('selectedResponsable') ?? "";
           if (savedLocal) {
-            setSelectedLocal(savedLocal);
-
             const employees = await getEmployes(savedLocal);
             setResponsables(employees);
-
-            if (savedResponsable) {
-              setSelectedResponsable(savedResponsable);
-            }
           }
+          setSelectedResponsable(savedResponsable);
+          setSelectedLocal(savedLocal);
         } catch (error) {
-          setError(String(error));
-          console.error("Error loading initial data:", error);
+          Alert.alert("Error cargando los datos:", error);
         } finally {
           setLoading(false);
         }
       };
-
       loadInitialData();
     }, [])
   );
 
   useEffect(() => {
     const loadEmployees = async () => {
-      if (!selectedLocal) return;
-
+      if (!selectedLocal) {
+        await AsyncStorage.removeItem('selectedLocal');
+        await AsyncStorage.removeItem('selectedResponsable');
+        await AsyncStorage.removeItem('requestId');
+        return setResponsables([])
+      };
       try {
         setLoadingEmployees(true);
+        await AsyncStorage.removeItem('selectedResponsable');
+        await AsyncStorage.removeItem('requestId');
+        await AsyncStorage.setItem('selectedLocal', selectedLocal);
         const employees = await getEmployes(selectedLocal);
         setResponsables(employees);
-        await AsyncStorage.setItem('selectedLocal', selectedLocal);
         setSelectedResponsable('');
-        await AsyncStorage.removeItem('selectedResponsable');
         setObservation('');
       } catch (error) {
-        console.error("Error loading employees:", error);
+        Alert.alert("Error obteniendo los empleados:", error)
       } finally {
         setLoadingEmployees(false);
       }
     };
-
     loadEmployees();
   }, [selectedLocal]);
 
   useEffect(() => {
     const loadResponsableData = async () => {
-      if (!selectedResponsable) return;
-
+      if (!selectedResponsable) {
+        await AsyncStorage.removeItem('requestId');
+        await AsyncStorage.removeItem('selectedResponsable');
+        setObservation("")
+        return
+      };
       try {
+        await AsyncStorage.removeItem('requestId');
         await AsyncStorage.setItem('selectedResponsable', selectedResponsable);
-        await getRequestId(selectedResponsable, selectedLocal);
-
-        const obs = await getObservation(selectedResponsable, selectedLocal);
-        setObservation(obs || '');
+        const request = await getRequestId(selectedResponsable, selectedLocal);
+        setObservation(request.observations || '');
       } catch (error) {
-        console.error("Error cargando datos del responsable:", error);
+        Alert.alert("Error cargando datos del responsable", error)
       }
     };
-
     loadResponsableData();
   }, [selectedResponsable]);
 
@@ -129,7 +124,7 @@ export default function LocalScreen() {
       setSavingObs(true);
       await saveObservation(selectedResponsable, selectedLocal, observation);
     } catch (e) {
-      console.error("Error guardando observación:", e);
+      Alert.alert("Error guardando la observación", e)
     } finally {
       setSavingObs(false);
     }
@@ -145,58 +140,25 @@ export default function LocalScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={[styles.sectionTitle, { color: colors.primary }]}>
-        Seleccione Local
+      {areas ? (<><Text style={[styles.sectionTitle, { color: colors.primary }]}>
+        Seleccione su área
       </Text>
-
-      <TouchableOpacity
-        style={styles.selectorButton}
-        onPress={() => setLocalModalVisible(true)}
-      >
-        <Text style={styles.selectorButtonText}>
-          {selectedLocalName || "Selecciona un local"}
-        </Text>
-      </TouchableOpacity>
-
-      <Modal
-        visible={localModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setLocalModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <FlatList
-              data={areas}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    setSelectedLocal(item.id);
-                    setLocalModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              onPress={() => setLocalModalVisible(false)}
-              style={styles.closeModalButton}
-            >
-              <Text style={styles.closeModalButtonText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
+        <TouchableOpacity
+          style={styles.selectorButton}
+          onPress={() => setLocalModalVisible(true)}
+        >
+          <Text style={styles.selectorButtonText}>
+            {selectedLocalName || "Toque ver las áreas"}
+          </Text>
+        </TouchableOpacity>
+      </>) : (<Text style={[styles.sectionTitle, { color: colors.primary }]}>
+        No se pudieron cargar las áreas revise su conexión
+      </Text>)}
       {selectedLocal && (
         <>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>
             Responsable
           </Text>
-
           {loadingEmployees ? (
             <View style={styles.loadingIndicator}>
               <ActivityIndicator size="small" color={colors.primary} />
@@ -211,42 +173,8 @@ export default function LocalScreen() {
                   {selectedResponsableName || "Selecciona un responsable"}
                 </Text>
               </TouchableOpacity>
-
-              <Modal
-                visible={responsableModalVisible}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setResponsableModalVisible(false)}
-              >
-                <View style={styles.modalOverlay}>
-                  <View style={styles.modalContent}>
-                    <FlatList
-                      data={responsables}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={styles.modalItem}
-                          onPress={() => {
-                            setSelectedResponsable(item.id);
-                            setResponsableModalVisible(false);
-                          }}
-                        >
-                          <Text style={styles.modalItemText}>{item.username}</Text>
-                        </TouchableOpacity>
-                      )}
-                    />
-                    <TouchableOpacity
-                      onPress={() => setResponsableModalVisible(false)}
-                      style={styles.closeModalButton}
-                    >
-                      <Text style={styles.closeModalButtonText}>Cancelar</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </Modal>
             </>
           )}
-
           {selectedResponsable && (
             <>
               <Text style={[styles.sectionTitle, { color: colors.primary }]}>
@@ -275,6 +203,70 @@ export default function LocalScreen() {
           )}
         </>
       )}
+      <Modal
+        visible={responsableModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setResponsableModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <FlatList
+              data={responsables ?? []}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedResponsable(item.id);
+                    setResponsableModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{item.username}</Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              onPress={() => setResponsableModalVisible(false)}
+              style={styles.closeModalButton}
+            >
+              <Text style={styles.closeModalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={localModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLocalModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <FlatList
+              data={areas ?? []}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedLocal(item.id);
+                    setLocalModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{item.local?.name} - {item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              onPress={() => setLocalModalVisible(false)}
+              style={styles.closeModalButton}
+            >
+              <Text style={styles.closeModalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

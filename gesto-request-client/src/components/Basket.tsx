@@ -45,13 +45,12 @@ export default function Basket({ title, url }) {
       const algunoReportado = saved.some(p => !!p.reported); // Verificación de reported
       setHasReported(algunoReportado);
     } catch (e) {
-      console.error("Error loading products:", e);
+      Alert.alert("Error cargando los productos",e)
     }
   };
 
   useEffect(() => {
     if (!productos?.length) return;
-
     const timer = setTimeout(async () => {
       try {
         setSyncStatus("loading");
@@ -64,7 +63,6 @@ export default function Basket({ title, url }) {
         setTimeout(() => setSyncStatus("idle"), 1500);
       }
     }, 800);
-
     return () => clearTimeout(timer);
   }, [productos]);
 
@@ -119,29 +117,20 @@ export default function Basket({ title, url }) {
         postInicial()
           .then(() => {Alert.alert('Guardar cantidades iniciales', 'Se guardaron las cantidades iniciales')
             setHasReported(true)
-
           })
-          .catch(() => Alert.alert('Guardar cantidades iniciales', 'Ha ocurrido un error'));
+          .catch((e) => Alert.alert('Error guardando cantidades iniciales',e ));
         break;
       case "Enviar Pedido":
         activateRequest()
           .then(() =>{ Alert.alert('Pedido enviado')
             setHasReported(true)
           })
-          .catch(() => Alert.alert('Error enviando el pedido'));
-        break;
-      case "Mover al área":
-        makeMovement()
-          .then(() => {Alert.alert('Movimiento realizado')
-              AsyncStorage.removeItem("requestId")
-             router.push({ pathname: "/pedidos" });
-          })
-          .catch(() => Alert.alert('No se ha realizado el movimiento'));
+          .catch((e) => Alert.alert('Error enviando el pedido',e));
         break;
       case "Guardar Final":
         postFinal()
           .then(() => Alert.alert('Guardar cantidades finales', 'Se guardaron correctamente'))
-          .catch(() => Alert.alert('Error al guardar finales'))
+          .catch((e) => Alert.alert('Error al guardar finales',e))
           .finally(() => {
             router.push({ pathname: "/" });
             AsyncStorage.removeItem("selectedLocal");
@@ -242,7 +231,7 @@ export default function Basket({ title, url }) {
               style={styles.input}
               keyboardType="decimal-pad"
               editable={!((url === 'initial'|| url === 'request') && hasReported  )}
-              value={(item.quantity?.toString()|| "")=="0"?"":item.quantity?.toString()|| ""}
+              value={item.quantity?.toString()|| ""}
               onChangeText={(text) => actualizarCantidad(item.id, text)}
               onSubmitEditing={() => handleSubmit(index)}
               placeholder="Cantidad"
