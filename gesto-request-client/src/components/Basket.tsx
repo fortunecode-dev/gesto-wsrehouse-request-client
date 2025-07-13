@@ -23,7 +23,7 @@ import {
   View,
 } from "react-native";
 
-const standar = { mass: "kg", units: "u", volume: "mL", distance: "cm" };
+const standar = { mass: "g", units: "u", volume: "mL", distance: "cm" };
 const cantidadRegex = /^\d*\.?\d{0,2}$/;
 
 export default function Basket({ title, url }) {
@@ -222,7 +222,7 @@ export default function Basket({ title, url }) {
               {item.stock === 0 && <Text style={styles.stock}>Sin existencia</Text>}
               {!!item.netContent && (
                 <Text style={styles.stock}>
-                  Contenido: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
+                  Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
                 </Text>
               )}
             </View>

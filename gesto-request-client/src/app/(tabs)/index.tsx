@@ -45,8 +45,8 @@ export default function LocalScreen() {
   const [responsableModalVisible, setResponsableModalVisible] = useState<boolean>(false);
   const { colors } = useTheme();
 
-  const selectedLocalName = areas.find(a => a.id === selectedLocal)?.name;
-  const selectedResponsableName = responsables.find(r => r.id === selectedResponsable)?.username;
+  const selectedLocalName = areas?.find(a => a.id === selectedLocal)?.name;
+  const selectedResponsableName = responsables?.find(r => r.id === selectedResponsable)?.username;
 
   useFocusEffect(
     useCallback(() => {
@@ -148,7 +148,7 @@ export default function LocalScreen() {
           onPress={() => setLocalModalVisible(true)}
         >
           <Text style={styles.selectorButtonText}>
-            {selectedLocalName || "Toque ver las áreas"}
+            {selectedLocalName || "Toque para ver las áreas"}
           </Text>
         </TouchableOpacity>
       </>) : (<Text style={[styles.sectionTitle, { color: colors.primary }]}>
