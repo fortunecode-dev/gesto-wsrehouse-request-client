@@ -58,6 +58,9 @@ export default function LocalScreen() {
 
           const savedLocal = await AsyncStorage.getItem('selectedLocal');
           const savedResponsable = await AsyncStorage.getItem('selectedResponsable');
+          console.log("selectedLocal",selectedLocal)
+          if(selectedLocal)  await AsyncStorage.setItem('selectedLocal',selectedLocal);
+          if(selectedResponsable)  await AsyncStorage.setItem('selectedResponsable',selectedResponsable);
 
           if (savedLocal) {
             setSelectedLocal(savedLocal);

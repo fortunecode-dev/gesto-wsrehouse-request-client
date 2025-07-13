@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Pedidos",
-    "slug": "gesto-request-client",
+    "name": "Pedidos by GESTO",
+    "slug": "Pedidos by GESTO",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

@@ -58,7 +58,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="(tabs)/inicio"
         options={{
-          title: 'Inicial',
+          title: 'Inicio',
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               name="clock-time-eight-outline"
