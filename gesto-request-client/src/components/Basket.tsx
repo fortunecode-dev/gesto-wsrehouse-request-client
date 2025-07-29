@@ -34,18 +34,23 @@ export default function Basket({ title, url }) {
 
   useFocusEffect(
     useCallback(() => {
+
       load();
     }, [url])
   );
 
   const load = async () => {
     try {
+      const param = await AsyncStorage.getItem(url == "request" ? 'requestId' : "selectedLocal");
+      const responsable = await AsyncStorage.getItem("selectedResponsable")
+      if (param == null || !responsable )
+        return router.push({ pathname: "/" })
       let saved = await getProductsSaved(url);
       setProductos([...saved]);
       const algunoReportado = saved.some(p => !!p.reported); // Verificación de reported
       setHasReported(algunoReportado);
     } catch (e) {
-      Alert.alert("Error cargando los productos",e)
+      Alert.alert("Error cargando los productos", e)
     }
   };
 
@@ -68,7 +73,7 @@ export default function Basket({ title, url }) {
 
   const actualizarCantidad = (id, nuevaCantidad) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if(url==="checkout") setHasReported(false)
+    if (url === "checkout") setHasReported(false)
     setProductos(prev =>
       prev.map(p =>
         p.id === id ? { ...p, quantity: nuevaCantidad } : p
@@ -115,22 +120,24 @@ export default function Basket({ title, url }) {
     switch (accion) {
       case "Guardar Inicial":
         postInicial()
-          .then(() => {Alert.alert('Guardar cantidades iniciales', 'Se guardaron las cantidades iniciales')
+          .then(() => {
+            Alert.alert('Guardar cantidades iniciales', 'Se guardaron las cantidades iniciales')
             setHasReported(true)
           })
-          .catch((e) => Alert.alert('Error guardando cantidades iniciales',e ));
+          .catch((e) => Alert.alert('Error guardando cantidades iniciales', e));
         break;
       case "Enviar Pedido":
         activateRequest()
-          .then(() =>{ Alert.alert('Pedido enviado')
+          .then(() => {
+            Alert.alert('Pedido enviado')
             setHasReported(true)
           })
-          .catch((e) => Alert.alert('Error enviando el pedido',e));
+          .catch((e) => Alert.alert('Error enviando el pedido', e));
         break;
       case "Guardar Final":
         postFinal()
           .then(() => Alert.alert('Guardar cantidades finales', 'Se guardaron correctamente'))
-          .catch((e) => Alert.alert('Error al guardar finales',e))
+          .catch((e) => Alert.alert('Error al guardar finales', e))
           .finally(() => {
             router.push({ pathname: "/" });
             AsyncStorage.removeItem("selectedLocal");
@@ -161,7 +168,7 @@ export default function Basket({ title, url }) {
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.buttonsRow}>
-           <View style={styles.syncIcon}>{renderSyncStatus()}</View>
+          <View style={styles.syncIcon}>{renderSyncStatus()}</View>
           <TouchableOpacity onPress={load} style={styles.actionButton}>
             <Text style={styles.actionText}>Actualizar</Text>
           </TouchableOpacity>
@@ -192,7 +199,7 @@ export default function Basket({ title, url }) {
               disabled={hayExcesoDeCantidad || !hasReported}
             >
               <Text style={[styles.actionText, (hayExcesoDeCantidad || !hasReported) && styles.disabledText]}>
-                {hayExcesoDeCantidad?"Stock insuficiente":!hasReported?"Esperando aprovación":"Mover al área"}
+                {hayExcesoDeCantidad ? "Stock insuficiente" : !hasReported ? "Esperando aprovación" : "Mover al área"}
               </Text>
             </TouchableOpacity>
           )}
@@ -203,7 +210,7 @@ export default function Basket({ title, url }) {
             </TouchableOpacity>
           )}
 
-         
+
         </View>
       </View>
 
@@ -230,8 +237,8 @@ export default function Basket({ title, url }) {
               ref={(ref) => { if (ref) inputsRef.current[index] = ref }}
               style={styles.input}
               keyboardType="decimal-pad"
-              editable={!((url === 'initial'|| url === 'request') && hasReported  )}
-              value={item.quantity?.toString()|| ""}
+              editable={!((url === 'initial' || url === 'request') && hasReported)}
+              value={item.quantity?.toString() || ""}
               onChangeText={(text) => actualizarCantidad(item.id, text)}
               onSubmitEditing={() => handleSubmit(index)}
               placeholder="Cantidad"

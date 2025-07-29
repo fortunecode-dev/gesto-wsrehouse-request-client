@@ -4,5 +4,5 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export const API_URL =async ()=>{
     const server = await AsyncStorage.getItem('server');
     if(server)return server
-   return   process.env.EXPO_PUBLIC_API_URL || "http://192.168.10.145/api";
+   return   process.env.EXPO_PUBLIC_API_URL || "http://10.147.144.87:4000";
 }
