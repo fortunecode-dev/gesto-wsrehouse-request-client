@@ -1,7 +1,7 @@
 import {
   getAreas,
   getEmployes,
-  getRequestId,
+  getObservation,
   saveObservation
 } from "@/services/pedidos.service";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -78,16 +78,14 @@ export default function LocalScreen() {
       if (!selectedLocal) {
         await AsyncStorage.removeItem('selectedLocal');
         await AsyncStorage.removeItem('selectedResponsable');
-        await AsyncStorage.removeItem('requestId');
         return setResponsables([])
       };
       try {
         setLoadingEmployees(true);
         await AsyncStorage.removeItem('selectedResponsable');
-        await AsyncStorage.removeItem('requestId');
         await AsyncStorage.setItem('selectedLocal', selectedLocal);
         const employees = await getEmployes(selectedLocal);
-        setResponsables(employees);
+        setResponsables([...employees]);
         setSelectedResponsable('');
         setObservation('');
       } catch (error) {
@@ -102,7 +100,6 @@ export default function LocalScreen() {
   useEffect(() => {
     const loadResponsableData = async () => {
       if (!selectedResponsable) {
-        await AsyncStorage.removeItem('requestId');
         await AsyncStorage.removeItem('selectedResponsable');
         setObservation("")
         return
@@ -110,8 +107,8 @@ export default function LocalScreen() {
       try {
         await AsyncStorage.removeItem('requestId');
         await AsyncStorage.setItem('selectedResponsable', selectedResponsable);
-        const request = await getRequestId(selectedResponsable, selectedLocal);
-        setObservation(request.observations || '');
+        const data = await getObservation(selectedLocal);
+        setObservation(data.observation || '');
       } catch (error) {
         Alert.alert("Error cargando datos del responsable", error)
       }

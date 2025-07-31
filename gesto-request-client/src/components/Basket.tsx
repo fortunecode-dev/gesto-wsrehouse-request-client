@@ -34,17 +34,17 @@ export default function Basket({ title, url }) {
 
   useFocusEffect(
     useCallback(() => {
-
       load();
     }, [url])
   );
 
   const load = async () => {
     try {
-      const param = await AsyncStorage.getItem(url == "request" ? 'requestId' : "selectedLocal");
-      const responsable = await AsyncStorage.getItem("selectedResponsable")
-      if (param == null || !responsable )
-        return router.push({ pathname: "/" })
+          const areaId = await AsyncStorage.getItem('selectedLocal');
+    const userId = await AsyncStorage.getItem('selectedResponsable');
+    if (areaId == null || userId===null)
+      return router.push({ pathname: "/" })
+
       let saved = await getProductsSaved(url);
       setProductos([...saved]);
       const algunoReportado = saved.some(p => !!p.reported); // Verificación de reported
@@ -65,9 +65,9 @@ export default function Basket({ title, url }) {
         console.error("Sync error:", error);
         setSyncStatus("error");
       } finally {
-        setTimeout(() => setSyncStatus("idle"), 1500);
+        setTimeout(() => setSyncStatus("idle"), 500);
       }
-    }, 800);
+    }, 500);
     return () => clearTimeout(timer);
   }, [productos]);
 
@@ -209,8 +209,6 @@ export default function Basket({ title, url }) {
               <Text style={styles.actionText}>Guardar Final</Text>
             </TouchableOpacity>
           )}
-
-
         </View>
       </View>
 
@@ -218,7 +216,7 @@ export default function Basket({ title, url }) {
         <Text style={styles.warningText}>⚠️ Cantidad mayor al stock en algunos productos.</Text>
       )}
 
-      {productos.map((item, index) => (
+      {productos?.map((item, index) => (
         <View key={item.id} style={getContainerStyle(item)}>
           <View style={styles.row}>
             <View style={styles.infoLeft}>
