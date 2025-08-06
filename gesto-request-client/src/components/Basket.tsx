@@ -1,19 +1,13 @@
-import {
-  activateRequest,
-  getProductsSaved,
-  makeMovement,
-  postFinal,
-  postInicial,
-  syncProducts
-} from "@/services/pedidos.service";
-import { MaterialIcons } from '@expo/vector-icons';
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
+  Image,
+  ImageSourcePropType,
   Keyboard,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -22,15 +16,54 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, useFocusEffect } from "expo-router";
+import { useAppTheme } from "@/providers/ThemeProvider";
+
+import {
+  activateRequest,
+  getProductsSaved,
+  postFinal,
+  postInicial,
+  syncProducts,
+} from "@/services/pedidos.service";
 
 const standar = { mass: "g", units: "u", volume: "mL", distance: "cm" };
 const cantidadRegex = /^\d*\.?\d{0,2}$/;
 
-export default function Basket({ title, url }) {
-  const [productos, setProductos] = useState([]);
+interface BasketProps {
+  title: string;
+  url: string;
+  help: {
+    title: string;
+    image: ImageSourcePropType;
+    content: { subtitle: string; content: string }[];
+  };
+}
+
+export default function Basket({ title, url, help }: BasketProps) {
+  const [productos, setProductos] = useState<any[]>([]);
   const [syncStatus, setSyncStatus] = useState("idle");
-  const [hasReported, setHasReported] = useState(false); // Nuevo
-  const inputsRef = useRef([]);
+  const [hasReported, setHasReported] = useState(false);
+  const [helpVisible, setHelpVisible] = useState(false);
+  const inputsRef = useRef<any[]>([]);
+
+  const { theme } = useAppTheme();
+  const isDark = theme === "dark";
+  const themeColors = {
+    background: isDark ? "#111827" : "#f2f2f2",
+    card: isDark ? "#1f2937" : "#ffffff",
+    text: isDark ? "#f9fafb" : "#2c3e50",
+    border: isDark ? "#374151" : "#e0e0e0",
+    inputBg: isDark ? "#1f2937" : "#fafafa",
+    inputText: isDark ? "#f3f4f6" : "#2c3e50",
+    primary: isDark ? "#60A5FA" : "#3498db",
+    success: "#2ecc71",
+    danger: "#e74c3c",
+    warning: "#e67e22",
+    disabled: isDark ? "#4b5563" : "#bdc3c7",
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -40,17 +73,15 @@ export default function Basket({ title, url }) {
 
   const load = async () => {
     try {
-          const areaId = await AsyncStorage.getItem('selectedLocal');
-    const userId = await AsyncStorage.getItem('selectedResponsable');
-    if (areaId == null || userId===null)
-      return router.push({ pathname: "/" })
+      const areaId = await AsyncStorage.getItem("selectedLocal");
+      const userId = await AsyncStorage.getItem("selectedResponsable");
+      if (!areaId || !userId) return router.push({ pathname: "/" });
 
-      let saved = await getProductsSaved(url);
+      const saved = await getProductsSaved(url);
       setProductos([...saved]);
-      const algunoReportado = saved.some(p => !!p.reported); // Verificación de reported
-      setHasReported(algunoReportado);
+      setHasReported(saved.some((p) => !!p.reported));
     } catch (e) {
-      Alert.alert("Error cargando los productos", e)
+      Alert.alert("Error cargando los productos", String(e));
     }
   };
 
@@ -62,7 +93,6 @@ export default function Basket({ title, url }) {
         await syncProducts(url, productos);
         setSyncStatus("success");
       } catch (error) {
-        console.error("Sync error:", error);
         setSyncStatus("error");
       } finally {
         setTimeout(() => setSyncStatus("idle"), 500);
@@ -71,17 +101,15 @@ export default function Basket({ title, url }) {
     return () => clearTimeout(timer);
   }, [productos]);
 
-  const actualizarCantidad = (id, nuevaCantidad) => {
+  const actualizarCantidad = (id: string, nuevaCantidad: string) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if (url === "checkout") setHasReported(false)
-    setProductos(prev =>
-      prev.map(p =>
-        p.id === id ? { ...p, quantity: nuevaCantidad } : p
-      )
+    if (url === "checkout") setHasReported(false);
+    setProductos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p))
     );
   };
 
-  const handleSubmit = (index) => {
+  const handleSubmit = (index: number) => {
     if (index + 1 < productos.length) {
       inputsRef.current[index + 1]?.focus();
     } else {
@@ -92,150 +120,130 @@ export default function Basket({ title, url }) {
   const renderSyncStatus = () => {
     switch (syncStatus) {
       case "loading":
-        return <ActivityIndicator size="small" color="#3498db" />;
+        return <ActivityIndicator size="small" color={themeColors.primary} />;
       case "success":
-        return <MaterialIcons name="check" size={18} color="#2ecc71" />;
+        return <MaterialIcons name="check" size={18} color={themeColors.success} />;
       case "error":
-        return <MaterialIcons name="error" size={18} color="#e74c3c" />;
+        return <MaterialIcons name="error" size={18} color={themeColors.danger} />;
       default:
         return null;
     }
   };
 
-  const getContainerStyle = (item) => {
-    const quantity = parseFloat(item.quantity || '0');
-    const stock = parseFloat(item.stock ?? '');
-    if (isNaN(stock) || quantity === 0) return styles.productoContainer;
-    if (quantity > stock) return [styles.productoContainer, styles.containerRed];
-    return [styles.productoContainer, styles.containerGreen];
+  const getContainerStyle = (item: any) => {
+    const quantity = parseFloat(item.quantity || "0");
+    const stock = parseFloat(item.stock ?? "");
+    if (isNaN(stock) || quantity === 0) return [styles.productoContainer, { backgroundColor: themeColors.card, borderColor: themeColors.border }];
+    if (quantity > stock) return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: "#fdecea" }];
+    return [styles.productoContainer, { borderColor: themeColors.success, backgroundColor: "#eafaf1" }];
   };
 
-  const hayExcesoDeCantidad = productos.some(p => {
-    const qty = parseFloat(p.quantity || '0');
-    const stk = parseFloat(p.stock ?? '0');
+  const hayExcesoDeCantidad = productos.some((p) => {
+    const qty = parseFloat(p.quantity || "0");
+    const stk = parseFloat(p.stock ?? "0");
     return qty > stk;
   });
 
-  const ejecutarAccion = (accion) => {
-    switch (accion) {
-      case "Guardar Inicial":
-        postInicial()
-          .then(() => {
-            Alert.alert('Guardar cantidades iniciales', 'Se guardaron las cantidades iniciales')
-            setHasReported(true)
-          })
-          .catch((e) => Alert.alert('Error guardando cantidades iniciales', e));
-        break;
-      case "Enviar Pedido":
-        activateRequest()
-          .then(() => {
-            Alert.alert('Pedido enviado')
-            setHasReported(true)
-          })
-          .catch((e) => Alert.alert('Error enviando el pedido', e));
-        break;
-      case "Guardar Final":
-        postFinal()
-          .then(() => Alert.alert('Guardar cantidades finales', 'Se guardaron correctamente'))
-          .catch((e) => Alert.alert('Error al guardar finales', e))
-          .finally(() => {
-            router.push({ pathname: "/" });
-            AsyncStorage.removeItem("selectedLocal");
-            AsyncStorage.removeItem("selectedResponsable");
-          });
-        break;
-      default:
-        console.warn("Acción desconocida");
+  const ejecutarAccion = async (accion: string) => {
+    try {
+      if (accion === "Guardar Inicial") {
+        await postInicial();
+        Alert.alert("Guardado", "Se guardaron las cantidades iniciales");
+        setHasReported(true);
+      } else if (accion === "Enviar Pedido") {
+        await activateRequest();
+        Alert.alert("Pedido enviado");
+        setHasReported(true);
+      } else if (accion === "Guardar Final") {
+        await postFinal();
+        Alert.alert("Final guardado");
+        await AsyncStorage.multiRemove(["selectedLocal", "selectedResponsable"]);
+        router.push("/");
+      }
+    } catch (e) {
+      Alert.alert("Error", String(e));
     }
   };
 
-  const handleAction = (accion) => {
-    Alert.alert(
-      "CONFIRMAR",
-      `DESEA ${accion.toUpperCase()}?`,
-      [
-        { text: "CANCELAR", style: "cancel" },
-        {
-          text: "CONFIRMAR",
-          onPress: () => ejecutarAccion(accion),
-        },
-      ]
-    );
+  const handleAction = (accion: string) => {
+    Alert.alert("Confirmar", `¿Desea ${accion}?`, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Sí", onPress: () => ejecutarAccion(accion) },
+    ]);
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>{title}</Text>
-        <View style={styles.buttonsRow}>
-          <View style={styles.syncIcon}>{renderSyncStatus()}</View>
-          <TouchableOpacity onPress={load} style={styles.actionButton}>
-            <Text style={styles.actionText}>Actualizar</Text>
-          </TouchableOpacity>
-
-          {url === 'initial' && (
-            <TouchableOpacity
-              onPress={() => !hasReported && handleAction("Guardar Inicial")}
-              style={[styles.actionButton, hasReported && styles.disabledButton]}
-              disabled={hasReported}
-            >
-              <Text style={[styles.actionText, hasReported && styles.disabledText]}>
-                {hasReported ? "Reportado" : "Guardar Inicial"}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {url === 'request' && (
-            <TouchableOpacity onPress={() => !hasReported && handleAction("Enviar Pedido")} style={[styles.actionButton, hasReported && styles.disabledButton]}
-              disabled={hasReported}>
-              <Text style={[styles.actionText, hasReported && styles.disabledText]}>{hasReported ? "En espera" : "Confirmar Pedido"}</Text>
-            </TouchableOpacity>
-          )}
-
-          {url === 'checkout' && (
-            <TouchableOpacity
-              onPress={() => (!hayExcesoDeCantidad && hasReported) && handleAction("Mover al área")}
-              style={[styles.actionButton, (hayExcesoDeCantidad || !hasReported) && styles.disabledButton]}
-              disabled={hayExcesoDeCantidad || !hasReported}
-            >
-              <Text style={[styles.actionText, (hayExcesoDeCantidad || !hasReported) && styles.disabledText]}>
-                {hayExcesoDeCantidad ? "Stock insuficiente" : !hasReported ? "Esperando aprovación" : "Mover al área"}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {url === 'final' && (
-            <TouchableOpacity onPress={() => handleAction("Guardar Final")} style={styles.actionButton}>
-              <Text style={styles.actionText}>Guardar Final</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: themeColors.background }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+     <KeyboardAvoidingView
+  style={{ flex: 1, backgroundColor: themeColors.background }}
+  behavior={Platform.OS === "ios" ? "padding" : "height"}
+  keyboardVerticalOffset={60} // ajusta según tu header fijo
+>
+  <View style={{ flex: 1 }}>
+    {/* Header fijo */}
+    <View style={[styles.headerRow, { backgroundColor: themeColors.card }]}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.title, { color: themeColors.text }]}>{title}</Text>
+        {hayExcesoDeCantidad && url === "checkout" && (
+          <View style={styles.warningBanner}>
+            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
+              ⚠️ Cantidad mayor al stock en algunos productos.
+            </Text>
+          </View>
+        )}
       </View>
 
-      {(hayExcesoDeCantidad && url === "checkout") && (
-        <Text style={styles.warningText}>⚠️ Cantidad mayor al stock en algunos productos.</Text>
-      )}
+      <View style={styles.buttonsRow}>
+        <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
+          <Text style={styles.actionText}>Ayuda</Text>
+        </TouchableOpacity>
+        <View style={styles.syncIcon}>{renderSyncStatus()}</View>
+        <TouchableOpacity onPress={load} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
+          <Text style={styles.actionText}>Actualizar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
 
-      {productos?.map((item, index) => (
+    {/* Lista desplazable con los inputs */}
+    <ScrollView
+      contentContainerStyle={[ { backgroundColor: themeColors.background }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      {productos.map((item, index) => (
         <View key={item.id} style={getContainerStyle(item)}>
           <View style={styles.row}>
             <View style={styles.infoLeft}>
-              <Text style={styles.nombre}>
+              <Text style={[styles.nombre, { color: themeColors.text }]}>
                 {item.name} ({standar[item.unitOfMeasureId]})
               </Text>
-              {!!item.stock && <Text style={styles.stock}>Stock: {item.stock}</Text>}
-              {item.stock === 0 && <Text style={styles.stock}>Sin existencia</Text>}
+              {!!item.stock && (
+                <Text style={{ color: themeColors.text }}>
+                  Stock: {item.stock}
+                </Text>
+              )}
               {!!item.netContent && (
-                <Text style={styles.stock}>
+                <Text style={{ color: themeColors.text }}>
                   Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
                 </Text>
               )}
             </View>
             <TextInput
-              ref={(ref) => { if (ref) inputsRef.current[index] = ref }}
-              style={styles.input}
+              ref={(ref) => {
+                if (ref) inputsRef.current[index] = ref;
+              }}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: themeColors.inputBg,
+                  color: themeColors.inputText,
+                  borderColor: themeColors.border,
+                },
+              ]}
               keyboardType="decimal-pad"
-              editable={!((url === 'initial' || url === 'request') && hasReported)}
+              editable={!((url === "initial" || url === "request") && hasReported)}
               value={item.quantity?.toString() || ""}
               onChangeText={(text) => actualizarCantidad(item.id, text)}
               onSubmitEditing={() => handleSubmit(index)}
@@ -247,41 +255,60 @@ export default function Basket({ title, url }) {
         </View>
       ))}
     </ScrollView>
+  </View>
+</KeyboardAvoidingView>
+
+      {/* MODAL DE AYUDA */}
+      <Modal visible={helpVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>{help.title}</Text>
+            <Image source={help.image} style={{ width: '100%', height: 200, marginVertical: 12, resizeMode: 'contain' }} />
+            {help.content.map((section, idx) => (
+              <View key={idx} style={{ marginBottom: 12 }}>
+                <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
+                <Text style={{ color: themeColors.text }}>{section.content}</Text>
+              </View>
+            ))}
+            <TouchableOpacity
+              onPress={() => setHelpVisible(false)}
+              style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
+            >
+              <Text style={styles.actionText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 10,
-    backgroundColor: "#f2f2f2",
-    paddingTop: Platform.OS === "ios" ? 20 : 10,
-    paddingBottom: 40,
-  },
+  warningBanner: {
+  backgroundColor: "#e67e22",
+  paddingVertical: 4,
+  paddingHorizontal: 8,
+  borderRadius: 6,
+  marginTop: 4,
+},
   headerRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 25,
-    marginBottom: 10,
-    gap: 10,
+    alignItems: "center",
+    padding: 10,
+    elevation: 4,
+    zIndex: 10,
   },
   title: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#2c3e50",
-    flex: 1,
   },
   buttonsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    justifyContent: "flex-end",
     alignItems: "center",
-    flex: 2,
+    gap: 6,
   },
   actionButton: {
-    backgroundColor: "#3498db",
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 6,
@@ -296,33 +323,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  disabledButton: {
-    backgroundColor: "#bdc3c7",
-  },
-  disabledText: {
-    color: "#7f8c8d",
-  },
-  warningText: {
-    color: "#e67e22",
-    fontSize: 13,
-    marginBottom: 8,
-    fontWeight: "600",
-  },
   productoContainer: {
-    backgroundColor: "#fff",
+    borderWidth: 1,
     borderRadius: 8,
     padding: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-  },
-  containerRed: {
-    borderColor: "#e74c3c",
-    backgroundColor: "#fdecea",
-  },
-  containerGreen: {
-    borderColor: "#2ecc71",
-    backgroundColor: "#eafaf1",
+    marginBottom: 10,
   },
   row: {
     flexDirection: "row",
@@ -334,23 +339,30 @@ const styles = StyleSheet.create({
   },
   nombre: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#34495e",
-    marginBottom: 2,
-  },
-  stock: {
-    fontSize: 12,
-    color: "#7f8c8d",
+    fontWeight: "600",
+    marginBottom: 4,
   },
   input: {
     width: 80,
     borderWidth: 1,
-    borderColor: "#ccc",
     borderRadius: 6,
     padding: 8,
     fontSize: 14,
-    backgroundColor: "#fafafa",
     textAlign: "right",
-    color: "#2c3e50",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalContainer: {
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
   },
 });

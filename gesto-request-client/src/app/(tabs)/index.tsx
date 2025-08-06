@@ -2,7 +2,7 @@ import {
   getAreas,
   getEmployes,
   getObservation,
-  saveObservation
+  saveObservation,
 } from "@/services/pedidos.service";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "expo-router";
@@ -12,19 +12,20 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
-import { useTheme } from "react-native-paper";
+import { useAppTheme } from "@/providers/ThemeProvider";
 
 interface Area {
   id: string;
   name: string;
-  local: { name: string }
+  local: { name: string };
 }
 
 interface Employee {
@@ -43,10 +44,30 @@ export default function LocalScreen() {
   const [savingObs, setSavingObs] = useState<boolean>(false);
   const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
   const [responsableModalVisible, setResponsableModalVisible] = useState<boolean>(false);
-  const { colors } = useTheme();
+  const { theme } = useAppTheme();
+  const isDark = theme === "dark";
+
+  const themeColors = {
+    background: isDark ? "#111827" : "#f8f9fa",
+    card: isDark ? "#1f2937" : "#ffffff",
+    text: isDark ? "#f9fafb" : "#2d3436",
+    border: isDark ? "#374151" : "#dfe6e9",
+    inputBg: isDark ? "#1f2937" : "#ffffff",
+    inputText: isDark ? "#f3f4f6" : "#2d3436",
+    primary: isDark ? "#60A5FA" : "#2563EB",
+    danger: isDark ? "#ef4444" : "#d63031",
+  };
 
   const selectedLocalName = areas?.find(a => a.id === selectedLocal)?.name;
   const selectedResponsableName = responsables?.find(r => r.id === selectedResponsable)?.username;
+
+  const showAlert = (title: string, message: any) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n${message}`);
+    } else {
+      Alert.alert(title, String(message));
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -64,7 +85,7 @@ export default function LocalScreen() {
           setSelectedResponsable(savedResponsable);
           setSelectedLocal(savedLocal);
         } catch (error) {
-          Alert.alert("Error cargando los datos:", error);
+          showAlert("Error cargando los datos:", error);
         } finally {
           setLoading(false);
         }
@@ -78,8 +99,8 @@ export default function LocalScreen() {
       if (!selectedLocal) {
         await AsyncStorage.removeItem('selectedLocal');
         await AsyncStorage.removeItem('selectedResponsable');
-        return setResponsables([])
-      };
+        return setResponsables([]);
+      }
       try {
         setLoadingEmployees(true);
         await AsyncStorage.removeItem('selectedResponsable');
@@ -89,7 +110,7 @@ export default function LocalScreen() {
         setSelectedResponsable('');
         setObservation('');
       } catch (error) {
-        Alert.alert("Error obteniendo los empleados:", error)
+        showAlert("Error obteniendo los empleados:", error);
       } finally {
         setLoadingEmployees(false);
       }
@@ -101,16 +122,16 @@ export default function LocalScreen() {
     const loadResponsableData = async () => {
       if (!selectedResponsable) {
         await AsyncStorage.removeItem('selectedResponsable');
-        setObservation("")
-        return
-      };
+        setObservation("");
+        return;
+      }
       try {
         await AsyncStorage.removeItem('requestId');
         await AsyncStorage.setItem('selectedResponsable', selectedResponsable);
         const data = await getObservation(selectedLocal);
         setObservation(data.observation || '');
       } catch (error) {
-        Alert.alert("Error cargando datos del responsable", error)
+        showAlert("Error cargando datos del responsable", error);
       }
     };
     loadResponsableData();
@@ -121,7 +142,7 @@ export default function LocalScreen() {
       setSavingObs(true);
       await saveObservation(selectedResponsable, selectedLocal, observation);
     } catch (e) {
-      Alert.alert("Error guardando la observación", e)
+      showAlert("Error guardando la observación", e);
     } finally {
       setSavingObs(false);
     }
@@ -129,67 +150,73 @@ export default function LocalScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: themeColors.background }]}>
+        <ActivityIndicator size="large" color={themeColors.primary} />
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {areas ? (<><Text style={[styles.sectionTitle, { color: colors.primary }]}>
-        Seleccione su área
-      </Text>
-        <TouchableOpacity
-          style={styles.selectorButton}
-          onPress={() => setLocalModalVisible(true)}
-        >
-          <Text style={styles.selectorButtonText}>
-            {selectedLocalName || "Toque para ver las áreas"}
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: themeColors.background }]}>
+      {areas ? (
+        <>
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
+            Seleccione su área
           </Text>
-        </TouchableOpacity>
-      </>) : (<Text style={[styles.sectionTitle, { color: colors.primary }]}>
-        No se pudieron cargar las áreas revise su conexión
-      </Text>)}
+          <TouchableOpacity
+            style={[styles.selectorButton, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}
+            onPress={() => setLocalModalVisible(true)}
+          >
+            <Text style={[styles.selectorButtonText, { color: themeColors.text }]}>
+              {selectedLocalName || "Toque para ver las áreas"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
+          No se pudieron cargar las áreas, revise su conexión
+        </Text>
+      )}
+
       {selectedLocal && (
         <>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
             Responsable
           </Text>
           {loadingEmployees ? (
             <View style={styles.loadingIndicator}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={themeColors.primary} />
             </View>
           ) : (
-            <>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setResponsableModalVisible(true)}
-              >
-                <Text style={styles.selectorButtonText}>
-                  {selectedResponsableName || "Selecciona un responsable"}
-                </Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              style={[styles.selectorButton, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}
+              onPress={() => setResponsableModalVisible(true)}
+            >
+              <Text style={[styles.selectorButtonText, { color: themeColors.text }]}>
+                {selectedResponsableName || "Selecciona un responsable"}
+              </Text>
+            </TouchableOpacity>
           )}
+
           {selectedResponsable && (
             <>
-              <Text style={[styles.sectionTitle, { color: colors.primary }]}>
+              <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
                 Observación
               </Text>
-              <View style={styles.textAreaContainer}>
+              <View style={[styles.textAreaContainer, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
                 <TextInput
                   multiline
                   numberOfLines={4}
-                  style={styles.textArea}
+                  style={[styles.textArea, { color: themeColors.inputText }]}
                   placeholder="Escriba aquí su observación..."
+                  placeholderTextColor={isDark ? "#9CA3AF" : "#6b7280"}
                   value={observation}
                   onChangeText={setObservation}
                 />
               </View>
               <TouchableOpacity
                 onPress={handleSaveObservation}
-                style={styles.saveButton}
+                style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
                 disabled={savingObs}
               >
                 <Text style={styles.saveButtonText}>
@@ -200,6 +227,8 @@ export default function LocalScreen() {
           )}
         </>
       )}
+
+      {/* MODALES */}
       <Modal
         visible={responsableModalVisible}
         transparent
@@ -207,7 +236,7 @@ export default function LocalScreen() {
         onRequestClose={() => setResponsableModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
             <FlatList
               data={responsables ?? []}
               keyExtractor={(item) => item.id}
@@ -219,19 +248,22 @@ export default function LocalScreen() {
                     setResponsableModalVisible(false);
                   }}
                 >
-                  <Text style={styles.modalItemText}>{item.username}</Text>
+                  <Text style={[styles.modalItemText, { color: themeColors.text }]}>
+                    {item.username}
+                  </Text>
                 </TouchableOpacity>
               )}
             />
             <TouchableOpacity
               onPress={() => setResponsableModalVisible(false)}
-              style={styles.closeModalButton}
+              style={[styles.closeModalButton, { backgroundColor: themeColors.danger }]}
             >
               <Text style={styles.closeModalButtonText}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
       <Modal
         visible={localModalVisible}
         transparent
@@ -239,7 +271,7 @@ export default function LocalScreen() {
         onRequestClose={() => setLocalModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
             <FlatList
               data={areas ?? []}
               keyExtractor={(item) => item.id}
@@ -251,13 +283,15 @@ export default function LocalScreen() {
                     setLocalModalVisible(false);
                   }}
                 >
-                  <Text style={styles.modalItemText}>{item.local?.name} - {item.name}</Text>
+                  <Text style={[styles.modalItemText, { color: themeColors.text }]}>
+                    {item.local?.name} - {item.name}
+                  </Text>
                 </TouchableOpacity>
               )}
             />
             <TouchableOpacity
               onPress={() => setLocalModalVisible(false)}
-              style={styles.closeModalButton}
+              style={[styles.closeModalButton, { backgroundColor: themeColors.danger }]}
             >
               <Text style={styles.closeModalButtonText}>Cancelar</Text>
             </TouchableOpacity>
@@ -271,7 +305,6 @@ export default function LocalScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 20,
-    backgroundColor: '#f8f9fa',
     flexGrow: 1,
   },
   loadingContainer: {
@@ -291,16 +324,13 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   selectorButton: {
-    backgroundColor: '#fff',
     padding: 15,
     borderRadius: 8,
-    borderColor: '#dfe6e9',
     borderWidth: 1,
     marginBottom: 15,
   },
   selectorButtonText: {
     fontSize: 16,
-    color: '#2d3436',
   },
   modalOverlay: {
     flex: 1,
@@ -308,7 +338,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalContent: {
-    backgroundColor: 'white',
     margin: 20,
     borderRadius: 10,
     padding: 15,
@@ -325,7 +354,6 @@ const styles = StyleSheet.create({
   closeModalButton: {
     marginTop: 10,
     padding: 12,
-    backgroundColor: '#d63031',
     borderRadius: 8,
     alignItems: 'center',
   },
@@ -334,21 +362,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   textAreaContainer: {
-    borderColor: '#dfe6e9',
     borderWidth: 1,
     borderRadius: 8,
     marginBottom: 10,
-    backgroundColor: '#fff',
     padding: 8,
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
     fontSize: 16,
-    color: '#2d3436',
   },
   saveButton: {
-    backgroundColor: '#0984e3',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',

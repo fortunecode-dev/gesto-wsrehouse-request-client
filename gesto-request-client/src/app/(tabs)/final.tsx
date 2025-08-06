@@ -2,6 +2,19 @@ import React from "react";
 import Basket from "@/components/Basket";
 
 export default function FinalScreen() {
-  return <Basket title={"Cantidades finales"} url={"final"}/>
+  return <Basket title={"Cantidades finales"} url={"final"}  help={{
+    title: "¿Cómo llenar los campos?",
+    image: require("../../../assets/ayudaInicial.png"),
+    content: [
+      {
+        subtitle: "Cantidad",
+        content: "Indique la cantidad exacta de unidades disponibles del producto."
+      },
+      {
+        subtitle: "Stock",
+        content: "El sistema validará que la cantidad no supere el stock permitido."
+      }
+    ]
+  }}/>
 }
 
