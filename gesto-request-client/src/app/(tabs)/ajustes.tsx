@@ -1,16 +1,16 @@
+import { useAppTheme } from '@/providers/ThemeProvider';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  Switch,
-  TextInput,
-  StyleSheet,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAppTheme } from '@/providers/ThemeProvider';
 
 export default function Ajustes() {
   const { theme, toggleTheme } = useAppTheme();
@@ -31,9 +31,9 @@ export default function Ajustes() {
   };
 
   const loadSettings = async () => {
-    const notif = await AsyncStorage.getItem('NOTIFICATIONS_ENABLED');
+    // const notif = await AsyncStorage.getItem('NOTIFICATIONS_ENABLED');
     const url = await AsyncStorage.getItem('SERVER_URL');
-    if (notif !== null) setNotificationsEnabled(JSON.parse(notif));
+    // if (notif !== null) setNotificationsEnabled(JSON.parse(notif));
     if (url !== null) setServerUrl(url);
   };
 

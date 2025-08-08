@@ -173,7 +173,7 @@ export default function LocalScreen() {
   return (
     <ScrollView contentContainerStyle={[styles.container, { backgroundColor: themeColors.background }]}>
       {areas ? (
-        <>
+        <View>
           <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
             Seleccione su área
           </Text>
@@ -185,7 +185,7 @@ export default function LocalScreen() {
               {selectedLocalName || "Toque para ver las áreas"}
             </Text>
           </TouchableOpacity>
-        </>
+        </View>
       ) : (
         <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
           No se pudieron cargar las áreas, revise su conexión
@@ -277,7 +277,6 @@ export default function LocalScreen() {
           </View>
         </View>
       </Modal>
-      {/* MODAL DE AYUDA */}
       <Modal visible={helpVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
