@@ -18,7 +18,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View, Image
 } from "react-native";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
@@ -46,6 +46,7 @@ export default function LocalScreen() {
   const [responsableModalVisible, setResponsableModalVisible] = useState<boolean>(false);
   const { theme } = useAppTheme();
   const isDark = theme === "dark";
+  const [helpVisible, setHelpVisible] = useState(false);
 
   const themeColors = {
     background: isDark ? "#111827" : "#f8f9fa",
@@ -57,7 +58,20 @@ export default function LocalScreen() {
     primary: isDark ? "#60A5FA" : "#2563EB",
     danger: isDark ? "#ef4444" : "#d63031",
   };
-
+  const help = {
+    title: "¿Cómo llenar los campos?",
+    image: require("../../../assets/ayudaInicial.png"),
+    content: [
+      {
+        subtitle: "Cantidad",
+        content: "Indique la cantidad exacta de unidades disponibles del producto."
+      },
+      {
+        subtitle: "Stock",
+        content: "El sistema validará que la cantidad no supere el stock permitido."
+      }
+    ]
+  }
   const selectedLocalName = areas?.find(a => a.id === selectedLocal)?.name;
   const selectedResponsableName = responsables?.find(r => r.id === selectedResponsable)?.username;
 
@@ -263,7 +277,27 @@ export default function LocalScreen() {
           </View>
         </View>
       </Modal>
-
+      {/* MODAL DE AYUDA */}
+      <Modal visible={helpVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>{help.title}</Text>
+            <Image source={help.image} style={{ width: '100%', height: 200, marginVertical: 12, resizeMode: 'contain' }} />
+            {help.content.map((section, idx) => (
+              <View key={idx} style={{ marginBottom: 12 }}>
+                <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
+                <Text style={{ color: themeColors.text }}>{section.content}</Text>
+              </View>
+            ))}
+            <TouchableOpacity
+              onPress={() => setHelpVisible(false)}
+              style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
+            >
+              <Text style={styles.actionText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={localModalVisible}
         transparent
@@ -382,5 +416,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalContainer: {
+    borderRadius: 12,
+    padding: 16,
+  },modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+  }, actionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },  actionText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
   },
 });

@@ -64,7 +64,7 @@ export default function Ajustes() {
           />
         </View>
 
-        {/* Notificaciones */}
+        {/* Notificaciones
         <View style={styles.settingRow}>
           <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
             Notificaciones
@@ -75,12 +75,12 @@ export default function Ajustes() {
             trackColor={{ false: '#ccc', true: '#4ADE80' }}
             thumbColor={notificationsEnabled ? '#10B981' : '#f4f3f4'}
           />
-        </View>
+        </View> */}
 
         {/* URL Servidor */}
         <View style={styles.settingRowColumn}>
           <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
-            URL del servidor
+            Dirección del servidor
           </Text>
           <TextInput
             value={serverUrl}

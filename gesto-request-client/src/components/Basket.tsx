@@ -73,6 +73,7 @@ export default function Basket({ title, url, help }: BasketProps) {
 
   const load = async () => {
     try {
+
       const areaId = await AsyncStorage.getItem("selectedLocal");
       const userId = await AsyncStorage.getItem("selectedResponsable");
       if (!areaId || !userId) return router.push({ pathname: "/" });
@@ -91,13 +92,14 @@ export default function Basket({ title, url, help }: BasketProps) {
       try {
         setSyncStatus("loading");
         await syncProducts(url, productos);
+        url === 'final' && await load()
         setSyncStatus("success");
       } catch (error) {
         setSyncStatus("error");
       } finally {
         setTimeout(() => setSyncStatus("idle"), 500);
       }
-    }, 500);
+    }, url === 'final' ? 200 : 500);
     return () => clearTimeout(timer);
   }, [productos]);
 
@@ -177,86 +179,128 @@ export default function Basket({ title, url, help }: BasketProps) {
       style={{ flex: 1, backgroundColor: themeColors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-     <KeyboardAvoidingView
-  style={{ flex: 1, backgroundColor: themeColors.background }}
-  behavior={Platform.OS === "ios" ? "padding" : "height"}
-  keyboardVerticalOffset={60} // ajusta según tu header fijo
->
-  <View style={{ flex: 1 }}>
-    {/* Header fijo */}
-    <View style={[styles.headerRow, { backgroundColor: themeColors.card }]}>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.title, { color: themeColors.text }]}>{title}</Text>
-        {hayExcesoDeCantidad && url === "checkout" && (
-          <View style={styles.warningBanner}>
-            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
-              ⚠️ Cantidad mayor al stock en algunos productos.
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.buttonsRow}>
-        <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
-          <Text style={styles.actionText}>Ayuda</Text>
-        </TouchableOpacity>
-        <View style={styles.syncIcon}>{renderSyncStatus()}</View>
-        <TouchableOpacity onPress={load} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
-          <Text style={styles.actionText}>Actualizar</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-
-    {/* Lista desplazable con los inputs */}
-    <ScrollView
-      contentContainerStyle={[ { backgroundColor: themeColors.background }]}
-      keyboardShouldPersistTaps="handled"
-    >
-      {productos.map((item, index) => (
-        <View key={item.id} style={getContainerStyle(item)}>
-          <View style={styles.row}>
-            <View style={styles.infoLeft}>
-              <Text style={[styles.nombre, { color: themeColors.text }]}>
-                {item.name} ({standar[item.unitOfMeasureId]})
-              </Text>
-              {!!item.stock && (
-                <Text style={{ color: themeColors.text }}>
-                  Stock: {item.stock}
-                </Text>
-              )}
-              {!!item.netContent && (
-                <Text style={{ color: themeColors.text }}>
-                  Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
-                </Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: themeColors.background }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={60} // ajusta según tu header fijo
+      >
+        <View style={{ flex: 1 }}>
+          {/* Header fijo */}
+          <View style={[styles.headerRow, { backgroundColor: themeColors.card }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.title, { color: themeColors.text }]}>{title}</Text>
+              {hayExcesoDeCantidad && url === "checkout" && (
+                <View style={styles.warningBanner}>
+                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
+                    ⚠️ Cantidad mayor al stock en algunos productos.
+                  </Text>
+                </View>
               )}
             </View>
-            <TextInput
-              ref={(ref) => {
-                if (ref) inputsRef.current[index] = ref;
-              }}
-              style={[
-                styles.input,
-                {
-                  backgroundColor: themeColors.inputBg,
-                  color: themeColors.inputText,
-                  borderColor: themeColors.border,
-                },
-              ]}
-              keyboardType="decimal-pad"
-              editable={!((url === "initial" || url === "request") && hasReported)}
-              value={item.quantity?.toString() || ""}
-              onChangeText={(text) => actualizarCantidad(item.id, text)}
-              onSubmitEditing={() => handleSubmit(index)}
-              placeholder="Cantidad"
-              placeholderTextColor="#888"
-              returnKeyType="next"
-            />
+
+            <View style={styles.buttonsRow}>
+              <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
+                <Text style={styles.actionText}>Ayuda</Text>
+              </TouchableOpacity>
+              <View style={styles.syncIcon}>{renderSyncStatus()}</View>
+              <TouchableOpacity onPress={load} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
+                <Text style={styles.actionText}>Actualizar</Text>
+              </TouchableOpacity>
+              {url === 'initial' && (
+                <TouchableOpacity
+                  onPress={() => !hasReported && handleAction("Guardar Inicial")}
+                  style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                  disabled={hasReported}
+                >
+                  <Text style={[styles.actionText, hasReported && styles.disabledText]}>
+                    {hasReported ? "Reportado" : "Guardar Inicial"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {url === 'request' && (
+                <TouchableOpacity onPress={() => !hasReported && handleAction("Enviar Pedido")} style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                  disabled={hasReported}>
+                  <Text style={[styles.actionText, hasReported && styles.disabledText]}>{hasReported ? "En espera" : "Confirmar Pedido"}</Text>
+                </TouchableOpacity>
+              )}
+
+              {url === 'checkout' && (
+                <TouchableOpacity
+                  onPress={() => (!hayExcesoDeCantidad && hasReported) && handleAction("Mover al área")}
+                  style={[styles.actionButton, (hayExcesoDeCantidad || !hasReported) && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                  disabled={hayExcesoDeCantidad || !hasReported}
+                >
+                  <Text style={[styles.actionText, (hayExcesoDeCantidad || !hasReported) && styles.disabledText]}>
+                    {hayExcesoDeCantidad ? "Stock insuficiente" : !hasReported ? "Esperando aprovación" : "Mover al área"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {url === 'final' && (
+                <TouchableOpacity onPress={() => handleAction("Guardar Final")} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
+                  <Text style={styles.actionText}>Guardar Final</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+
+          {/* Lista desplazable con los inputs */}
+          <ScrollView
+            contentContainerStyle={[{ backgroundColor: themeColors.background }]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {productos.map((item, index) => (
+              <View key={item.id} style={getContainerStyle(item)}>
+                <View style={styles.row}>
+                  <View style={styles.infoLeft}>
+                    <Text style={[styles.nombre, { color: themeColors.text }]}>
+                      {item.name} ({standar[item.unitOfMeasureId]})
+                    </Text>
+                    {!!item.stock && (
+                      <Text style={{ color: themeColors.text }}>
+                        Stock: {item.stock}
+                      </Text>
+                    )}
+
+                    {!!item.netContent && (
+                      <Text style={{ color: themeColors.text }}>
+                        Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
+                      </Text>
+                    )}
+                    {url === 'final' && (
+                      <Text style={{ color: themeColors.text, fontWeight: "bold" }}>
+                        Vendido: {item.sold}
+                      </Text>
+                    )}
+                  </View>
+                  <TextInput
+                    ref={(ref) => {
+                      if (ref) inputsRef.current[index] = ref;
+                    }}
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: themeColors.inputBg,
+                        color: themeColors.inputText,
+                        borderColor: themeColors.border,
+                      },
+                    ]}
+                    keyboardType="decimal-pad"
+                    editable={!((url === "initial" || url === "request") && hasReported)}
+                    value={item.quantity?.toString() || ""}
+                    onChangeText={(text) => actualizarCantidad(item.id, text)}
+                    onSubmitEditing={() => handleSubmit(index)}
+                    placeholder="Cantidad"
+                    placeholderTextColor="#888"
+                    returnKeyType="next"
+                  />
+                </View>
+              </View>
+            ))}
+          </ScrollView>
         </View>
-      ))}
-    </ScrollView>
-  </View>
-</KeyboardAvoidingView>
+      </KeyboardAvoidingView>
 
       {/* MODAL DE AYUDA */}
       <Modal visible={helpVisible} animationType="slide" transparent>
@@ -285,12 +329,12 @@ export default function Basket({ title, url, help }: BasketProps) {
 
 const styles = StyleSheet.create({
   warningBanner: {
-  backgroundColor: "#e67e22",
-  paddingVertical: 4,
-  paddingHorizontal: 8,
-  borderRadius: 6,
-  marginTop: 4,
-},
+    backgroundColor: "#e67e22",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginTop: 4,
+  },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -364,5 +408,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     marginBottom: 8,
+  }, disabledButton: {
+    backgroundColor: "#bdc3c7",
+  },
+  disabledText: {
+    color: "#7f8c8d",
   },
 });
