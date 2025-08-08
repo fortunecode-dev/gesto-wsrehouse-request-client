@@ -237,6 +237,15 @@ export default function LocalScreen() {
                   {savingObs ? 'Guardando...' : 'Guardar Observación'}
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={()=>setHelpVisible(true)}
+                style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
+                disabled={savingObs}
+              >
+                <Text style={styles.saveButtonText}>
+                  Ayuda
+                </Text>
+              </TouchableOpacity>
             </>
           )}
         </>

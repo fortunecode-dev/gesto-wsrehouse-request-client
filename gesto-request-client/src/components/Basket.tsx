@@ -92,14 +92,13 @@ export default function Basket({ title, url, help }: BasketProps) {
       try {
         setSyncStatus("loading");
         await syncProducts(url, productos);
-        url === 'final' && await load()
         setSyncStatus("success");
       } catch (error) {
         setSyncStatus("error");
       } finally {
         setTimeout(() => setSyncStatus("idle"), 500);
       }
-    }, url === 'final' ? 200 : 500);
+    }, 500);
     return () => clearTimeout(timer);
   }, [productos]);
 
@@ -270,7 +269,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                     )}
                     {url === 'final' && (
                       <Text style={{ color: themeColors.text, fontWeight: "bold" }}>
-                        Vendido: {item.sold}
+                        Consumido: {item.sold}
                       </Text>
                     )}
                   </View>
