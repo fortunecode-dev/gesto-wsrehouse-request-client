@@ -60,17 +60,30 @@ export default function LocalScreen() {
   };
   const help = {
     title: "¿Cómo llenar los campos?",
-    image: require("../../../assets/ayudaInicial.png"),
-    content: [
-      {
-        subtitle: "Cantidad",
-        content: "Indique la cantidad exacta de unidades disponibles del producto."
-      },
-      {
-        subtitle: "Stock",
-        content: "El sistema validará que la cantidad no supere el stock permitido."
-      }
-    ]
+    image: require("../../../assets/area.png"),
+    content:
+      [
+        {
+          "subtitle": "Introducción",
+          "content": "Esta aplicación reemplaza todo el trabajo que antiguamente se hacía en hojas, donde se ponían las cantidades iniciales, la entrada, el disponible, las cantidades finales y las observaciones. Se accede a ella en la figurita que parece una tienda, que tiene el nombre 'Local'. Los demás botones son para declarar las cantidades iniciales, hacer los pedidos, declarar las cantidades finales, y el botón de ajustes por ahora no se usa, así que no lo toque."
+        },
+        {
+          "subtitle": "1- Seleccione su área",
+          "content": "Toque este botón para seleccionar el área a la que pertenece. Si su área no está aquí, es porque no tiene productos asignados para trabajar. Consulte al responsable del almacén."
+        },
+        {
+          "subtitle": "2- Responsable",
+          "content": "Toque este botón para seleccionar quién es usted. Si no aparece, es porque no está asignado para trabajar en esta área. Consulte al responsable del almacén."
+        },
+        {
+          "subtitle": "3- Observación",
+          "content": "Aquí podrá escribir cualquier observación del turno (siempre debe tocar el botón 'Guardar Observación'). Si se equivoca escribiendo las cantidades iniciales o finales y ya guardó, aquí es donde debe escribir qué fue lo que pasó. Puede hacerlo en cualquier momento. Esas observaciones pertenecen al área, sin importar que después trabaje otra persona. Es decir, si terminó su turno, guardó todo, pero se acordó de algo, puede escribirlo, y la persona que trabajará al otro día podrá verlo."
+        },
+        {
+          "subtitle": "Procedimiento",
+          "content": "Después de seleccionar su área y su nombre, toque el botón con la imagen de un reloj que dice 'Inicio' para escribir sus cantidades iniciales."
+        }
+      ]
   }
   const selectedLocalName = areas?.find(a => a.id === selectedLocal)?.name;
   const selectedResponsableName = responsables?.find(r => r.id === selectedResponsable)?.username;
@@ -237,20 +250,21 @@ export default function LocalScreen() {
                   {savingObs ? 'Guardando...' : 'Guardar Observación'}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={()=>setHelpVisible(true)}
-                style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
-                disabled={savingObs}
-              >
-                <Text style={styles.saveButtonText}>
-                  Ayuda
-                </Text>
-              </TouchableOpacity>
+
             </>
           )}
+
         </>
       )}
-
+      <TouchableOpacity
+        onPress={() => setHelpVisible(true)}
+        style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
+        disabled={savingObs}
+      >
+        <Text style={styles.saveButtonText}>
+          Ayuda
+        </Text>
+      </TouchableOpacity>
       {/* MODALES */}
       <Modal
         visible={responsableModalVisible}
@@ -290,13 +304,16 @@ export default function LocalScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
             <Text style={[styles.modalTitle, { color: themeColors.text }]}>{help.title}</Text>
-            <Image source={help.image} style={{ width: '100%', height: 200, marginVertical: 12, resizeMode: 'contain' }} />
-            {help.content.map((section, idx) => (
+            <ScrollView style={{height:"80%" }}>
+            {/* <Image source={help.image} style={{ height:"auto",width:"100%kc",marginVertical: 12, resizeMode: 'contain' }} /> */}
+               {help.content.map((section, idx) => (
               <View key={idx} style={{ marginBottom: 12 }}>
                 <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
                 <Text style={{ color: themeColors.text }}>{section.content}</Text>
               </View>
             ))}
+            </ScrollView>
+           
             <TouchableOpacity
               onPress={() => setHelpVisible(false)}
               style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
@@ -428,7 +445,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     borderRadius: 12,
     padding: 16,
-  },modalTitle: {
+  }, modalTitle: {
     fontSize: 20,
     fontWeight: "700",
     marginBottom: 8,
@@ -436,7 +453,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 6,
-  },  actionText: {
+  }, actionText: {
     color: "#fff",
     fontWeight: "600",
     fontSize: 14,

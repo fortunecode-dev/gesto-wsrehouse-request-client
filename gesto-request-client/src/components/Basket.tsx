@@ -106,7 +106,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     if (!cantidadRegex.test(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p))
+      prev.map((p) => (p.id === id ? { ...p, quantity: Number(nuevaCantidad).toString() } : p))
     );
   };
 
@@ -301,27 +301,29 @@ export default function Basket({ title, url, help }: BasketProps) {
         </View>
       </KeyboardAvoidingView>
 
-      {/* MODAL DE AYUDA */}
       <Modal visible={helpVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
-            <Text style={[styles.modalTitle, { color: themeColors.text }]}>{help.title}</Text>
-            <Image source={help.image} style={{ width: '100%', height: 200, marginVertical: 12, resizeMode: 'contain' }} />
-            {help.content.map((section, idx) => (
-              <View key={idx} style={{ marginBottom: 12 }}>
-                <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
-                <Text style={{ color: themeColors.text }}>{section.content}</Text>
-              </View>
-            ))}
-            <TouchableOpacity
-              onPress={() => setHelpVisible(false)}
-              style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
-            >
-              <Text style={styles.actionText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+             <View style={styles.modalOverlay}>
+               <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
+                 <Text style={[styles.modalTitle, { color: themeColors.text }]}>{help.title}</Text>
+                 <ScrollView style={{height:"80%" }}>
+                 {/* <Image source={help.image} style={{ height:"auto",width:"100%kc",marginVertical: 12, resizeMode: 'contain' }} /> */}
+                    {help.content.map((section, idx) => (
+                   <View key={idx} style={{ marginBottom: 12 }}>
+                     <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
+                     <Text style={{ color: themeColors.text }}>{section.content}</Text>
+                   </View>
+                 ))}
+                 </ScrollView>
+                
+                 <TouchableOpacity
+                   onPress={() => setHelpVisible(false)}
+                   style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
+                 >
+                   <Text style={styles.actionText}>Cerrar</Text>
+                 </TouchableOpacity>
+               </View>
+             </View>
+           </Modal>
     </KeyboardAvoidingView>
   );
 }
