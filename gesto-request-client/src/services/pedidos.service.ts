@@ -3,30 +3,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { router } from "expo-router";
 
-export const getProducts = async () => {
-  try {
-    const areaId = await AsyncStorage.getItem('selectedLocal');
-    const { data } = await axios.get(`${await API_URL()}/request/products/${areaId}`)
-    return data
-  } catch (error) {
-    router.push({ pathname: "/" })
-    AsyncStorage.removeItem("selectedLocal")
-    return []
-  }
-}
-
 export const getProductsSaved = async (url) => {
   try {
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
-    if (areaId == null || userId === null)
+    if (areaId == null || userId == null){
+console.log("getProductsSaved return");
       return router.push({ pathname: "/" })
+    }
     const { data } = await axios.get(`${await API_URL()}/request/products/saved/${url}/${areaId}`)
     return data
   } catch (error) {
+    console.log("getProductsSaved error return" ,error);
     AsyncStorage.removeItem("selectedLocal")
     AsyncStorage.removeItem("selectedResponsable")
-    AsyncStorage.removeItem("requestId")
     router.push({ pathname: "/" })
     return []
   }
@@ -54,12 +44,14 @@ export const syncProducts = async (url: string, productos: any[]) => {
   try {
     const userId = await AsyncStorage.getItem('selectedResponsable');
     const areaId = await AsyncStorage.getItem('selectedLocal');
-    const parsed= productos.map(item=>({...item, quantity:item.quantity[item.quantity.length-1]==="."?item.quantity.slice(item.quantity.length-1):item.quantity}))
+    const parsed= productos.map(item=>({...item, quantity:item.quantity?.[item.quantity?.length-1]==="."?item.quantity.slice(item.quantity.length-1):item.quantity}))
     const response = await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
     return response.data;
   } catch (error) {
+    console.log("syncProducts return",url,error)
     router.push({ pathname: "/" })
     AsyncStorage.removeItem("selectedLocal")
+    AsyncStorage.removeItem("selectedResponsable")
     return []
   }
 };
