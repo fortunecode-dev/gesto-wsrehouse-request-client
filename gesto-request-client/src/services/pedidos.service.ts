@@ -44,7 +44,7 @@ export const syncProducts = async (url: string, productos: any[]) => {
   try {
     const userId = await AsyncStorage.getItem('selectedResponsable');
     const areaId = await AsyncStorage.getItem('selectedLocal');
-    const parsed= productos.map(item=>({...item, quantity:item.quantity?.[item.quantity?.length-1]==="."?item.quantity.slice(item.quantity.length-1):item.quantity}))
+    const parsed= productos.map(item=>({...item, quantity:item.quantity?.[item.quantity?.length-1]==="."||item.quantity?.[item.quantity?.length-1]===","?item.quantity.slice(item.quantity.length-1):item.quantity}))
     const response = await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
     return response.data;
   } catch (error) {

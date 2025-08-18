@@ -31,7 +31,9 @@ import {
 } from "@/services/pedidos.service";
 
 const standar: Record<string, string> = { mass: "g", units: "u", volume: "mL", distance: "cm" };
-const cantidadRegex = /^\d*\.?\d{0,2}$/;
+// (2) Aceptar coma o punto
+const cantidadRegex = /^\d*[.,]?\d{0,2}$/;
+const COUNT_TIMES_KEY = "COUNT_TIMES";
 
 interface BasketProps {
   title: string;
@@ -51,23 +53,27 @@ function normalize(str: string) {
     .trim();
 }
 
+function sumCounts(arr: (string | number)[]) {
+  return arr.reduce((acc, val) => {
+    const n = parseFloat(String(val).replace(",", "."));
+    const a = typeof acc === "number" ? acc : parseFloat(String(acc).replace(",", "."));
+    return (isNaN(a) ? 0 : a) + (isNaN(n) ? 0 : n);
+  }, 0);
+}
+
 export default function Basket({ title, url, help }: BasketProps) {
   const [productos, setProductos] = useState<any[]>([]);
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [hasReported, setHasReported] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
-
-  // Confirmación cross-platform (incluye Web)
   const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string }>({
     visible: false,
   });
 
-  const inputsRef = useRef<any[]>([]);
-
-  // search
   const [query, setQuery] = useState("");
+  const [countTimes, setCountTimes] = useState<number>(1);
 
-  // list + scroll refs
+  const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
   const scrollOffsetRef = useRef(0);
 
@@ -85,32 +91,63 @@ export default function Basket({ title, url, help }: BasketProps) {
     danger: "#e74c3c",
     warning: "#e67e22",
     disabled: isDark ? "#4b5563" : "#bdc3c7",
+    accent: isDark ? "#F59E0B" : "#d35400",
   };
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      let isActive = true;
+      const run = async () => {
+        const ctRaw = await AsyncStorage.getItem(COUNT_TIMES_KEY);
+        let ct = parseInt(ctRaw || "1", 10);
+        if (isNaN(ct) || ct < 1) ct = 1;
+        if (!isActive) return;
+        setCountTimes(ct);
+        await load(ct);
+      };
+      run();
+      return () => {
+        isActive = false;
+      };
     }, [url])
   );
 
-  const load = async () => {
+  const ensureCountsShape = useCallback((arr: any[], ct: number) => {
+    return arr.map((p) => {
+      let counts: string[] = Array.isArray(p.counts) ? [...p.counts] : [];
+      if (counts.length === 0) {
+        const initial = p.quantity != null && p.quantity !== "" ? String(p.quantity) : "";
+        counts = new Array(ct).fill("");
+        counts[0] = initial;
+      } else {
+        if (counts.length < ct) counts = counts.concat(new Array(ct - counts.length).fill(""));
+        if (counts.length > ct) counts = counts.slice(0, ct);
+      }
+      const total = sumCounts(counts);
+      return { ...p, counts, quantity: total ? String(total) : counts[0] || "" };
+    });
+  }, []);
+
+  const load = async (ctForShape?: number) => {
     try {
       const areaId = await AsyncStorage.getItem("selectedLocal");
       const userId = await AsyncStorage.getItem("selectedResponsable");
-      if (!areaId || !userId) {
-        console.log("Area o usuario faltante ",areaId,userId);
-        return router.push({ pathname: "/" });
-      }
+      if (!areaId || !userId) return router.push({ pathname: "/" });
 
       const saved = await getProductsSaved(url);
-      setProductos([...saved]);
-      setHasReported(saved.some((p) => !!p.reported));
+      const shaped = ensureCountsShape(saved, ctForShape ?? countTimes);
+      setProductos(shaped);
+      setHasReported(saved.some((p: any) => !!p.reported));
     } catch (e) {
       Alert.alert("Error cargando los productos", String(e));
     }
   };
 
-  // sync when productos change
+  useEffect(() => {
+    if (!productos.length) return;
+    setProductos((prev) => ensureCountsShape(prev, countTimes));
+  }, [countTimes, ensureCountsShape, productos.length]);
+
   useEffect(() => {
     if (!productos?.length) return;
     const timer = setTimeout(async () => {
@@ -118,7 +155,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         setSyncStatus("loading");
         await syncProducts(url, productos);
         setSyncStatus("success");
-      } catch (error) {
+      } catch {
         setSyncStatus("error");
       } finally {
         setTimeout(() => setSyncStatus("idle"), 500);
@@ -133,12 +170,36 @@ export default function Basket({ title, url, help }: BasketProps) {
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
   };
 
-  const handleSubmit = (index: number, dataLength: number) => {
-    if (index + 1 < dataLength) {
-      inputsRef.current[index + 1]?.focus();
+  const actualizarCantidadParcial = (id: string, countIndex: number, nuevaCantidad: string) => {
+    if (!cantidadRegex.test(nuevaCantidad)) return;
+    setProductos((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const counts: string[] = Array.isArray(p.counts)
+          ? [...p.counts]
+          : new Array(countTimes).fill("");
+        counts[countIndex] = nuevaCantidad;
+        const total = sumCounts(counts);
+        return { ...p, counts, quantity: total ? String(total) : "" };
+      })
+    );
+  };
+
+  const handleSubmit = (prodIndex: number, dataLength: number) => {
+    if (prodIndex + 1 < dataLength) {
+      const nextRef = inputsRef.current[(prodIndex + 1) * Math.max(1, countTimes)];
+      if (nextRef?.focus) nextRef.focus();
     } else {
       Keyboard.dismiss();
     }
+  };
+
+  const handleSubmitMulti = (prodIndex: number, countIndex: number, dataLength: number) => {
+    const flatIndex = prodIndex * countTimes + countIndex + 1;
+    const nextRef =
+      inputsRef.current[flatIndex] ?? inputsRef.current[(prodIndex + 1) * countTimes];
+    if (nextRef?.focus) nextRef.focus();
+    else Keyboard.dismiss();
   };
 
   const renderSyncStatus = () => {
@@ -173,7 +234,6 @@ export default function Basket({ title, url, help }: BasketProps) {
     return qty > stk;
   });
 
-  // Acciones reales
   const ejecutarAccion = async (accion: string) => {
     try {
       if (accion === "Guardar Inicial") {
@@ -190,7 +250,6 @@ export default function Basket({ title, url, help }: BasketProps) {
         await AsyncStorage.multiRemove(["selectedLocal", "selectedResponsable"]);
         router.push("/");
       } else if (accion === "Mover al área") {
-        // Si luego agregas endpoint específico, ponlo aquí
         Alert.alert("Éxito", "Se movió al área");
       }
     } catch (e) {
@@ -198,7 +257,6 @@ export default function Basket({ title, url, help }: BasketProps) {
     }
   };
 
-  // Abre modal de confirmación (funciona en Web)
   const handleAction = (accion: string) => {
     setConfirmState({ visible: true, accion });
   };
@@ -209,67 +267,204 @@ export default function Basket({ title, url, help }: BasketProps) {
     return productos.filter((p) => normalize(p.name).includes(q));
   }, [productos, query]);
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
-  };
-
-  const onInputFocus = useCallback(() => {
+  const onSearchFocus = useCallback(() => {
     if (!query) return;
-    const offset = scrollOffsetRef.current;
     setQuery("");
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToOffset({ offset, animated: false });
-    });
   }, [query]);
 
-  const renderItem = useCallback(
-    ({ item, index }: { item: any; index: number }) => (
-      <View style={getContainerStyle(item)}>
-        <View style={styles.row}>
-          <View style={styles.infoLeft}>
-            <Text style={[styles.nombre, { color: themeColors.text }]}>
-              {item.name} ({standar[item.unitOfMeasureId]})
-            </Text>
-            {!!item.stock && <Text style={{ color: themeColors.text }}>Stock: {item.stock}</Text>}
-            {!!item.netContent && (
-              <Text style={{ color: themeColors.text }}>
-                Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
-              </Text>
-            )}
-            {url === "final" && (
-              <Text style={{ color: themeColors.text, fontWeight: "bold" }}>Consumido: {item.sold}</Text>
-            )}
-          </View>
-
-          <TextInput
-            ref={(ref) => {
-              if (ref) inputsRef.current[index] = ref;
-            }}
-            style={[
-              styles.input,
-              {
-                backgroundColor: themeColors.inputBg,
-                color: themeColors.inputText,
-                borderColor: themeColors.border,
-              },
-            ]}
-            keyboardType="decimal-pad"
-            editable={!((url === "initial" || url === "request") && hasReported)}
-            value={item.quantity?.toString() || ""}
-            onFocus={onInputFocus}
-            onChangeText={(text) => actualizarCantidad(item.id, text)}
-            onSubmitEditing={() => handleSubmit(index, filteredProductos.length)}
-            placeholder="Cantidad"
-            placeholderTextColor="#888"
-            returnKeyType="next"
-          />
-        </View>
-      </View>
-    ),
-    [filteredProductos.length, hasReported, themeColors, url, onInputFocus]
+  // ====== BLOQUES UI ======
+  const TotalInline = ({ value }: { value: string }) => (
+    <Text style={[styles.totalTextInline, { color: themeColors.accent }]}>
+      Total: {value || "0"}
+    </Text>
   );
 
-  // Componente de Confirmación (Modal compatible con Web)
+  const TotalBadgeRight = ({ value }: { value: string }) => (
+    <View style={[styles.totalBadge, { borderColor: themeColors.accent }]}>
+      <Text style={[styles.totalBadgeText, { color: themeColors.accent }]} numberOfLines={1}>
+        Total: {value || "0"}
+      </Text>
+    </View>
+  );
+
+  const CountsRight = (item: any, prodIndex: number) => {
+    const editable = !((url === "initial" || url === "request") && hasReported);
+    const counts: string[] = Array.isArray(item.counts)
+      ? (item.counts.length === countTimes
+          ? item.counts
+          : [...item.counts, ...new Array(Math.max(0, countTimes - item.counts.length)).fill("")]
+        ).slice(0, countTimes)
+      : new Array(countTimes).fill("");
+
+    const inputWidth = countTimes === 2 ? "48%" : "100%";
+
+    return (
+      <View style={styles.rightForty}>
+        <View style={styles.countsRightInner}>
+          {counts.map((val, cIdx) => {
+            const flatKey = prodIndex * countTimes + cIdx;
+            return (
+              <TextInput
+                key={`c-${item.id}-${cIdx}`}
+                ref={(ref) => {
+                  if (ref) inputsRef.current[flatKey] = ref;
+                }}
+                style={[
+                  styles.countInputBase,
+                  { width: inputWidth },
+                  {
+                    backgroundColor: themeColors.inputBg,
+                    color: themeColors.inputText,
+                    borderColor: themeColors.border,
+                  },
+                ]}
+                keyboardType="decimal-pad"
+                inputMode="decimal"           // (4) hint web
+                editable={editable}
+                value={val ?? ""}
+                onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text)}
+                onSubmitEditing={() => handleSubmitMulti(prodIndex, cIdx, filteredProductos.length)}
+                placeholder="0"
+                placeholderTextColor="#888"
+                returnKeyType="next"
+              />
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  const CountsStack = (item: any, prodIndex: number) => {
+    const editable = !((url === "initial" || url === "request") && hasReported);
+    const counts: string[] = Array.isArray(item.counts)
+      ? (item.counts.length === countTimes
+          ? item.counts
+          : [...item.counts, ...new Array(Math.max(0, countTimes - item.counts.length)).fill("")]
+        ).slice(0, countTimes)
+      : new Array(countTimes).fill("");
+
+    return (
+      <View style={styles.countsRowStack}>
+        {counts.map((val, cIdx) => {
+          const flatKey = prodIndex * countTimes + cIdx;
+          return (
+            <TextInput
+              key={`cs-${item.id}-${cIdx}`}
+              ref={(ref) => {
+                if (ref) inputsRef.current[flatKey] = ref;
+              }}
+              style={[
+                styles.countInputBase,
+                styles.countInputStack,
+                {
+                  backgroundColor: themeColors.inputBg,
+                  color: themeColors.inputText,
+                  borderColor: themeColors.border,
+                },
+              ]}
+              keyboardType="decimal-pad"
+              inputMode="decimal"           // (4) hint web
+              editable={editable}
+              value={val ?? ""}
+              onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text)}
+              onSubmitEditing={() => handleSubmitMulti(prodIndex, cIdx, filteredProductos.length)}
+              placeholder="0"
+              placeholderTextColor="#888"
+              returnKeyType="next"
+            />
+          );
+        })}
+      </View>
+    );
+  };
+
+  const ProductInfoBlock = ({ item, style, children }: { item: any; style?: any; children?: React.ReactNode }) => (
+    <View style={[styles.infoLeft, style]}>
+      <Text style={[styles.nombre, { color: themeColors.text }]}>
+        {item.name} ({standar[item.unitOfMeasureId]})
+      </Text>
+      {!!item.stock && <Text style={{ color: themeColors.text }}>Stock: {item.stock}</Text>}
+      {!!item.netContent && (
+        <Text style={{ color: themeColors.text }}>
+          Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
+        </Text>
+      )}
+      {url === "final" && (
+        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>Consumido: {item.sold}</Text>
+      )}
+      {children}
+    </View>
+  );
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: any; index: number }) => {
+      const isMulti = url === "initial" || url === "final";
+      const stacked = isMulti && countTimes >= 3;
+      const showTotal = isMulti && countTimes > 1;
+
+      if (!isMulti) {
+        return (
+          <View style={getContainerStyle(item)}>
+            <View style={styles.row}>
+              <ProductInfoBlock item={item} />
+              <TextInput
+                ref={(ref) => {
+                  if (ref) inputsRef.current[index] = ref;
+                }}
+                style={[
+                  styles.inputFlex,
+                  {
+                    backgroundColor: themeColors.inputBg,
+                    color: themeColors.inputText,
+                    borderColor: themeColors.border,
+                  },
+                ]}
+                keyboardType="decimal-pad"
+                inputMode="decimal"         // (4) hint web
+                editable={!((url === "initial" || url === "request") && hasReported)}
+                value={item.quantity?.toString() || ""}
+                onChangeText={(text) => actualizarCantidad(item.id, text)}
+                onSubmitEditing={() => handleSubmit(index, filteredProductos.length)}
+                placeholder="Cantidad"
+                placeholderTextColor="#888"
+                returnKeyType="next"
+              />
+            </View>
+          </View>
+        );
+      }
+
+      if (!stacked) {
+        return (
+          <View style={getContainerStyle(item)}>
+            <View style={styles.rowTopAligned}>
+              <ProductInfoBlock item={item} style={styles.infoSixty}>
+                {showTotal && <TotalInline value={item.quantity} />}
+              </ProductInfoBlock>
+              {CountsRight(item, index)}
+            </View>
+          </View>
+        );
+      }
+
+      return (
+        <View style={getContainerStyle(item)}>
+          <View style={styles.headerStackRow}>
+            <View style={styles.headerStackLeft}>
+              <ProductInfoBlock item={item} />
+            </View>
+            <View style={styles.headerStackRight}>
+              {showTotal && <TotalBadgeRight value={item.quantity} />}
+            </View>
+          </View>
+          {CountsStack(item, index)}
+        </View>
+      );
+    },
+    [countTimes, filteredProductos.length, hasReported, themeColors, url]
+  );
+
   const ConfirmDialog = ({
     visible,
     text,
@@ -282,12 +477,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     onConfirm: () => void;
   }) => {
     return (
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={onCancel}
-      >
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
         <View style={styles.modalOverlay}>
           <View style={[styles.confirmCard, { backgroundColor: themeColors.card }]}>
             <Text style={[styles.confirmText, { color: themeColors.text }]}>{text}</Text>
@@ -318,50 +508,32 @@ export default function Basket({ title, url, help }: BasketProps) {
         <View style={{ flex: 1 }}>
           {/* Header */}
           <View style={[styles.header, { backgroundColor: themeColors.card }]}>
-            {/* Fila superior */}
             <View style={styles.headerTopRow}>
-              <Text
-                style={[styles.titleSmall, { color: themeColors.text }]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
+              <Text style={[styles.titleSmall, { color: themeColors.text }]} numberOfLines={1} ellipsizeMode="tail">
                 {title}
               </Text>
-
               <View style={styles.topRight}>
                 <View style={styles.syncIcon}>{renderSyncStatus()}</View>
-                <TouchableOpacity
-                  onPress={() => setHelpVisible(true)}
-                  style={[styles.actionButton, { backgroundColor: themeColors.primary }]}
-                >
+                <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Ayuda</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Warning (si aplica) */}
             {hayExcesoDeCantidad && url === "checkout" && (
               <View style={styles.warningBanner}>
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
-                  ⚠️ Cantidad mayor al stock en algunos productos.
-                </Text>
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>⚠️ Cantidad mayor al stock en algunos productos.</Text>
               </View>
             )}
 
-            {/* Fila inferior: buscador + botones */}
             <View style={styles.headerBottomRow}>
-              {/* Buscador */}
-              <View
-                style={[
-                  styles.searchBox,
-                  { backgroundColor: themeColors.inputBg, borderColor: themeColors.border },
-                ]}
-              >
+              <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
                 <MaterialIcons name="search" size={18} color="#888" />
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="Buscar producto..."
+                  onFocus={onSearchFocus}
+                  placeholder="Buscar..."
                   placeholderTextColor="#888"
                   style={[styles.searchInput, { color: themeColors.inputText }]}
                   returnKeyType="search"
@@ -374,23 +546,15 @@ export default function Basket({ title, url, help }: BasketProps) {
                 )}
               </View>
 
-              {/* Botones derecha */}
               <View style={styles.bottomRight}>
-                <TouchableOpacity
-                  onPress={load}
-                  style={[styles.actionButton, { backgroundColor: themeColors.primary }]}
-                >
+                <TouchableOpacity onPress={() => load(countTimes)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Actualizar</Text>
                 </TouchableOpacity>
 
                 {url === "initial" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Guardar Inicial")}
-                    style={[
-                      styles.actionButton,
-                      hasReported && styles.disabledButton,
-                      { backgroundColor: themeColors.primary },
-                    ]}
+                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
                     disabled={hasReported}
                   >
                     <Text style={[styles.actionText, hasReported && styles.disabledText]}>
@@ -402,11 +566,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {url === "request" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Enviar Pedido")}
-                    style={[
-                      styles.actionButton,
-                      hasReported && styles.disabledButton,
-                      { backgroundColor: themeColors.primary },
-                    ]}
+                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
                     disabled={hasReported}
                   >
                     <Text style={[styles.actionText, hasReported && styles.disabledText]}>
@@ -418,33 +578,17 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {url === "checkout" && (
                   <TouchableOpacity
                     onPress={() => !hayExcesoDeCantidad && hasReported && handleAction("Mover al área")}
-                    style={[
-                      styles.actionButton,
-                      (hayExcesoDeCantidad || !hasReported) && styles.disabledButton,
-                      { backgroundColor: themeColors.primary },
-                    ]}
+                    style={[styles.actionButton, (hayExcesoDeCantidad || !hasReported) && styles.disabledButton, { backgroundColor: themeColors.primary }]}
                     disabled={hayExcesoDeCantidad || !hasReported}
                   >
-                    <Text
-                      style={[
-                        styles.actionText,
-                        (hayExcesoDeCantidad || !hasReported) && styles.disabledText,
-                      ]}
-                    >
-                      {hayExcesoDeCantidad
-                        ? "Stock insuficiente"
-                        : !hasReported
-                        ? "Esperando aprovación"
-                        : "Mover al área"}
+                    <Text style={[styles.actionText, (hayExcesoDeCantidad || !hasReported) && styles.disabledText]}>
+                      {hayExcesoDeCantidad ? "Stock insuficiente" : !hasReported ? "Esperando aprovación" : "Mover al área"}
                     </Text>
                   </TouchableOpacity>
                 )}
 
                 {url === "final" && (
-                  <TouchableOpacity
-                    onPress={() => handleAction("Guardar Final")}
-                    style={[styles.actionButton, { backgroundColor: themeColors.primary }]}
-                  >
+                  <TouchableOpacity onPress={() => handleAction("Guardar Final")} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                     <Text style={styles.actionText}>Guardar Final</Text>
                   </TouchableOpacity>
                 )}
@@ -465,7 +609,6 @@ export default function Basket({ title, url, help }: BasketProps) {
               paddingBottom: 10,
             }}
             keyboardShouldPersistTaps="handled"
-            onScroll={onScroll}
             scrollEventThrottle={16}
             initialNumToRender={12}
             maxToRenderPerBatch={12}
@@ -491,17 +634,14 @@ export default function Basket({ title, url, help }: BasketProps) {
                 </View>
               )}
             />
-            <TouchableOpacity
-              onPress={() => setHelpVisible(false)}
-              style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
-            >
+            <TouchableOpacity onPress={() => setHelpVisible(false)} style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}>
               <Text style={styles.actionText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Modal de confirmación cross-platform (incluye Web) */}
+      {/* Confirmación */}
       <ConfirmDialog
         visible={confirmState.visible}
         text={`¿Desea ${confirmState.accion}?`}
@@ -553,7 +693,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   searchBox: {
-    flex: 1, // ocupa el espacio restante
+    flex: 1,
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
@@ -575,50 +715,126 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  actionButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
-  actionText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  syncIcon: {
-    marginLeft: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   productoContainer: {
     borderWidth: 1,
     borderRadius: 8,
     padding: 10,
     marginBottom: 10,
+    overflow: "hidden",
   },
+
+  // Filas de producto
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "stretch",
+    gap: 10,
   },
+  rowTopAligned: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 10,
+  },
+
+  // Info producto
   infoLeft: {
     flex: 1,
-    marginRight: 10,
+    flexShrink: 1,          // (1) quitar marginRight, usar flex puro
   },
+  // (1) 60% / 40% con flex ratios
+  infoSixty: {
+    flex: 3,                // ≈ 60%
+  },
+
   nombre: {
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 4,
+    flexWrap: "wrap",
   },
-  input: {
-    width: 80,
+
+  // Total inline (izquierda)
+  totalTextInline: {
+    marginTop: 6,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  // Input único (no-multi) - (3) mínimo 20% del contenedor
+  inputFlex: {
     borderWidth: 1,
     borderRadius: 6,
     padding: 8,
     fontSize: 14,
     textAlign: "right",
+    flexBasis: "20%",
+    minWidth: 80,
+    flexShrink: 1,
   },
 
-  // Overlay genérico
+  // Mitad derecha para conteos (countTimes < 3) - (1) usar flex ratio
+  rightForty: {
+    flex: 2,                // ≈ 40%
+  },
+  countsRightInner: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+
+  // Conteos (debajo cuando countTimes >= 3)
+  countsRowStack: {
+    marginTop: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+
+  // Base de cada input de conteo
+  countInputBase: {
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 8,
+    fontSize: 14,
+    textAlign: "right",
+    marginBottom: 8,
+  },
+  // En Stack (≥3): 3 por fila
+  countInputStack: {
+    width: "30%",
+    minWidth: 80,
+  },
+
+  // Cabecera para stacked (info izquierda + total derecha)
+  headerStackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  headerStackLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  headerStackRight: {
+    width: 140,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  totalBadge: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 120,
+  },
+  totalBadgeText: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  // Overlays / Modales
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -626,8 +842,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
   },
-
-  // Ayuda
   modalContainer: {
     borderRadius: 12,
     padding: 16,
@@ -640,8 +854,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 8,
   },
-
-  // Confirmación
   confirmCard: {
     borderRadius: 12,
     padding: 16,
@@ -657,6 +869,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: 8,
+  },
+
+  actionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  actionText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  syncIcon: {
+    marginLeft: 6,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   disabledButton: {
