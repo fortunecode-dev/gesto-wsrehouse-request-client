@@ -106,7 +106,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     if (!cantidadRegex.test(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, quantity: Number(nuevaCantidad).toString() } : p))
+      prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p))
     );
   };
 
