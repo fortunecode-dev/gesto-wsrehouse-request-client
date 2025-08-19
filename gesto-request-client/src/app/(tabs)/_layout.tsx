@@ -5,6 +5,7 @@ import 'react-native-reanimated';
 import "../../global.css";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemeProvider, useAppTheme } from '@/providers/ThemeProvider'; // ✅ Hook personalizado
+import WifiBanner from '@/components/WifiBanner';
 
 export default function TabLayout() {
   const { width } = useWindowDimensions();
@@ -20,6 +21,7 @@ export default function TabLayout() {
   return (
     <ThemeProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor }}>
+        <WifiBanner/>
         <Tabs
           screenOptions={{
             headerShown: false,

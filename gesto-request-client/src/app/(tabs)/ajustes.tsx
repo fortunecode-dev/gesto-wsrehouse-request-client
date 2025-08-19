@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 const COUNT_TIMES_KEY = 'COUNT_TIMES';
+const WIFI_TARGET_NAME_KEY = 'WIFI_TARGET_NAME'; // ← NUEVO
 
 export default function Ajustes() {
   const { theme, toggleTheme } = useAppTheme();
@@ -21,6 +22,9 @@ export default function Ajustes() {
 
   // Campo editable como string para permitir borrar (''), se normaliza en onBlur
   const [countTimesInput, setCountTimesInput] = useState<string>('1');
+
+  // ← NUEVO: nombre de la WiFi (permite vacío para que aplique el default "wifipost")
+  const [wifiNameInput, setWifiNameInput] = useState<string>('');
 
   const isDark = theme === 'dark';
 
@@ -49,6 +53,14 @@ export default function Ajustes() {
     await AsyncStorage.setItem(COUNT_TIMES_KEY, String(n));
   };
 
+  // ← NUEVO: guardar el nombre de la WiFi (puede ser vacío)
+  const commitWifiName = async () => {
+    const trimmed = wifiNameInput.trim();
+    // Permitimos vacío: si está vacío, el banner usará "wifipost" por defecto
+    setWifiNameInput(trimmed);
+    await AsyncStorage.setItem(WIFI_TARGET_NAME_KEY, trimmed);
+  };
+
   const loadSettings = async () => {
     const url = await AsyncStorage.getItem('SERVER_URL');
     if (url !== null) setServerUrl(url);
@@ -66,8 +78,9 @@ export default function Ajustes() {
       }
     }
 
-    // const notif = await AsyncStorage.getItem('NOTIFICATIONS_ENABLED');
-    // if (notif !== null) setNotificationsEnabled(JSON.parse(notif));
+    // Cargar WiFi objetivo; si no existe, dejamos '' (vacío) para que el banner use "wifipost"
+    const wn = await AsyncStorage.getItem(WIFI_TARGET_NAME_KEY);
+    setWifiNameInput(wn ?? '');
   };
 
   useEffect(() => {
@@ -99,7 +112,7 @@ export default function Ajustes() {
 
         {/* Notificaciones (opcional) */}
         {false && (
-          <View style={styles.settingRow}>
+          <View className="settingRow">
             <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
               Notificaciones
             </Text>
@@ -139,7 +152,7 @@ export default function Ajustes() {
           <TextInput
             value={countTimesInput}
             onChangeText={handleCountTimesChange}
-            onBlur={commitCountTimes}           // ← si está vacío, guarda 1
+            onBlur={commitCountTimes}
             keyboardType="numeric"
             placeholder="1"
             placeholderTextColor="#9CA3AF"
@@ -150,6 +163,29 @@ export default function Ajustes() {
           />
           <Text style={[styles.hint, isDark ? styles.textDark : styles.textLight]}>
             Debe ser un número entero ≥ 1. Si dejas el campo vacío, se guardará 1.
+          </Text>
+        </View>
+
+        {/* ← NUEVO: Nombre de la Wi‑Fi objetivo */}
+        <View style={styles.settingRowColumn}>
+          <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
+            Nombre de la Wi‑Fi objetivo
+          </Text>
+          <TextInput
+            value={wifiNameInput}
+            onChangeText={setWifiNameInput}
+            onBlur={commitWifiName}
+            placeholder='Ej: "MiRedLocal" (vacío = "wifipost")'
+            placeholderTextColor="#9CA3AF"
+            style={[
+              styles.input,
+              isDark ? styles.inputDark : styles.inputLight,
+            ]}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={[styles.hint, isDark ? styles.textDark : styles.textLight]}>
+            Si dejas este campo vacío, se tomará <Text style={{ fontWeight: '700' }}>wifipost</Text> por defecto.
           </Text>
         </View>
       </ScrollView>
