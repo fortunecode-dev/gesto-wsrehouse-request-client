@@ -216,22 +216,15 @@ export default function Basket({ title, url, help }: BasketProps) {
   };
 
   const getContainerStyle = (item: any) => {
-    const quantity = parseFloat(item.quantity || "0");
-    const stock = parseFloat(item.stock ?? "");
-    if (isNaN(stock) || quantity === 0)
-      return [
-        styles.productoContainer,
-        { backgroundColor: themeColors.card, borderColor: themeColors.border },
-      ];
-    if (quantity > stock)
-      return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: "#fdecea" }];
-    return [styles.productoContainer, { borderColor: themeColors.success, backgroundColor: "#eafaf1" }];
+    if (item.price===null && url!="request")
+      return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: themeColors.background }];
+    return [styles.productoContainer,  { backgroundColor: themeColors.card, borderColor: themeColors.border }];
   };
 
   const hayExcesoDeCantidad = productos.some((p) => {
     const qty = parseFloat(p.quantity || "0");
     const stk = parseFloat(p.stock ?? "0");
-    return qty > stk;
+    return p.price===null;
   });
 
   const ejecutarAccion = async (accion: string) => {
@@ -266,6 +259,10 @@ export default function Basket({ title, url, help }: BasketProps) {
     if (!q) return productos;
     return productos.filter((p) => normalize(p.name).includes(q));
   }, [productos, query]);
+
+   const income = useMemo(() => {
+    return productos.reduce((acc,item) => acc+item.monto,0);
+  }, [productos]);
 
   const onSearchFocus = useCallback(() => {
     if (!query) return;
@@ -427,6 +424,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                 onChangeText={(text) => actualizarCantidad(item.id, text)}
                 onSubmitEditing={() => handleSubmit(index, filteredProductos.length)}
                 placeholder="Cantidad"
+                 blurOnSubmit={false}
                 placeholderTextColor="#888"
                 returnKeyType="next"
               />
@@ -496,14 +494,11 @@ export default function Basket({ title, url, help }: BasketProps) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: themeColors.background }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <>
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: themeColors.background }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={60}
+             behavior={Platform.OS === "ios" ? "padding" : "height"}
+    keyboardVerticalOffset={60}
       >
         <View style={{ flex: 1 }}>
           {/* Header */}
@@ -514,17 +509,19 @@ export default function Basket({ title, url, help }: BasketProps) {
               </Text>
               <View style={styles.topRight}>
                 <View style={styles.syncIcon}>{renderSyncStatus()}</View>
+                
                 <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Ayuda</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {hayExcesoDeCantidad && url === "checkout" && (
+            {hayExcesoDeCantidad && url !== "request" && (
               <View style={styles.warningBanner}>
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>⚠️ Cantidad mayor al stock en algunos productos.</Text>
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>⚠️ Los productos con el borde rojo no tienen precio asignado, el importe debe calcularse manualmente para estos. (Marcados en rojo)</Text>
               </View>
             )}
+            
 
             <View style={styles.headerBottomRow}>
               <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
@@ -535,6 +532,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                   onFocus={onSearchFocus}
                   placeholder="Buscar..."
                   placeholderTextColor="#888"
+                   blurOnSubmit={false}
                   style={[styles.searchInput, { color: themeColors.inputText }]}
                   returnKeyType="search"
                   autoCorrect={false}
@@ -592,8 +590,13 @@ export default function Basket({ title, url, help }: BasketProps) {
                     <Text style={styles.actionText}>Guardar Final</Text>
                   </TouchableOpacity>
                 )}
+                
               </View>
-            </View>
+            </View>{url == "final" && (
+              <View>
+              <Text style={[styles.importText,{color:themeColors.text}]}>Importe: ${income}</Text>
+              </View>
+            )}
           </View>
 
           {/* Lista virtualizada */}
@@ -608,10 +611,12 @@ export default function Basket({ title, url, help }: BasketProps) {
               paddingTop: 10,
               paddingBottom: 10,
             }}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
+  keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             scrollEventThrottle={16}
             initialNumToRender={12}
             maxToRenderPerBatch={12}
+            
             windowSize={10}
             removeClippedSubviews
           />
@@ -652,7 +657,7 @@ export default function Basket({ title, url, help }: BasketProps) {
           ejecutarAccion(a);
         }}
       />
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -879,6 +884,10 @@ const styles = StyleSheet.create({
   actionText: {
     color: "#fff",
     fontWeight: "600",
+    fontSize: 14,
+  },
+   importText: {
+    fontWeight: "900",
     fontSize: 14,
   },
   syncIcon: {

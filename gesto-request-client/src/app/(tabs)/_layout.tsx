@@ -21,7 +21,7 @@ export default function TabLayout() {
   return (
     <ThemeProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor }}>
-        <WifiBanner/>
+        {/* <WifiBanner/> */}
         <Tabs
           screenOptions={{
             headerShown: false,
