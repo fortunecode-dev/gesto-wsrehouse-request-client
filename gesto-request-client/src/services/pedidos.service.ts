@@ -5,10 +5,11 @@ import { router } from "expo-router";
 
 export const getProductsSaved = async (url) => {
   try {
+    if(url=="casa")
+      url="final"
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
     if (areaId == null || userId == null){
-console.log("getProductsSaved return");
       return router.push({ pathname: "/" })
     }
     const { data } = await axios.get(`${await API_URL()}/request/products/saved/${url}/${areaId}`)
@@ -102,7 +103,9 @@ export const postFinal = async () => {
   try {
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
-    const response = await axios.post(`${await API_URL()}/request/post/final`, { areaId, userId });
+    const casa = await AsyncStorage.getItem('CASA_DATA');
+    const desglose = await AsyncStorage.getItem('DESGLOSE_DATA');
+    const response = await axios.post(`${await API_URL()}/request/post/final`, { areaId, userId,casa,desglose });
     return response.data;
   } catch (error) {
     throw JSON.stringify(error)

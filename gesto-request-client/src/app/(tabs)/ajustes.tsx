@@ -1,4 +1,4 @@
-import { useAppTheme } from '@/providers/ThemeProvider';
+import { useAppTheme } from '@/providers/ThemeProvider'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,25 +13,29 @@ import {
 } from 'react-native';
 
 const COUNT_TIMES_KEY = 'COUNT_TIMES';
-const WIFI_TARGET_NAME_KEY = 'WIFI_TARGET_NAME'; // ← NUEVO
+const WIFI_TARGET_NAME_KEY = 'WIFI_TARGET_NAME';
+const POS_MODE_KEY = 'POS_MODE';
+const EXCHANGE_KEYS = ["USD","EUR","CAN"];
 
 export default function Ajustes() {
   const { theme, toggleTheme } = useAppTheme();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+
   const [serverUrl, setServerUrl] = useState('');
-
-  // Campo editable como string para permitir borrar (''), se normaliza en onBlur
   const [countTimesInput, setCountTimesInput] = useState<string>('1');
-
-  // ← NUEVO: nombre de la WiFi (permite vacío para que aplique el default "wifipost")
   const [wifiNameInput, setWifiNameInput] = useState<string>('');
+  const [posModeEnabled, setPosModeEnabled] = useState(false);
+  const [exchangeRates, setExchangeRates] = useState<Record<string,string | null>>({
+    USD: null,
+    EUR: null,
+    CAN: null,
+  });
 
   const isDark = theme === 'dark';
 
-  const toggleNotifications = async () => {
-    const newValue = !notificationsEnabled;
-    setNotificationsEnabled(newValue);
-    await AsyncStorage.setItem('NOTIFICATIONS_ENABLED', JSON.stringify(newValue));
+  const togglePosMode = async () => {
+    const newValue = !posModeEnabled;
+    setPosModeEnabled(newValue);
+    await AsyncStorage.setItem(POS_MODE_KEY, JSON.stringify(newValue));
   };
 
   const handleServerUrlChange = async (text: string) => {
@@ -40,32 +44,45 @@ export default function Ajustes() {
   };
 
   const handleCountTimesChange = (text: string) => {
-    // Solo dígitos; permitir vacío mientras escribe
     const cleaned = text.replace(/[^\d]/g, '');
     setCountTimesInput(cleaned);
   };
 
   const commitCountTimes = async () => {
-    // Si está vacío o < 1 -> guardar 1
     let n = parseInt(countTimesInput || '', 10);
     if (isNaN(n) || n < 1) n = 1;
     setCountTimesInput(String(n));
     await AsyncStorage.setItem(COUNT_TIMES_KEY, String(n));
   };
 
-  // ← NUEVO: guardar el nombre de la WiFi (puede ser vacío)
   const commitWifiName = async () => {
     const trimmed = wifiNameInput.trim();
-    // Permitimos vacío: si está vacío, el banner usará "wifipost" por defecto
     setWifiNameInput(trimmed);
     await AsyncStorage.setItem(WIFI_TARGET_NAME_KEY, trimmed);
+  };
+
+  const loadExchangeRates = async () => {
+    const rates: Record<string,string | null> = { USD: null, EUR: null, CAN: null };
+    for (const key of EXCHANGE_KEYS) {
+      const value = await AsyncStorage.getItem(`EXCHANGE_${key}`);
+      rates[key] = value ?? null;
+    }
+    setExchangeRates(rates);
+  };
+
+  const handleExchangeChange = (currency: string, value: string) => {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    setExchangeRates(prev => ({ ...prev, [currency]: cleaned }));
+  };
+
+  const commitExchange = async (currency: string) => {
+    await AsyncStorage.setItem(`EXCHANGE_${currency}`, exchangeRates[currency] ?? '');
   };
 
   const loadSettings = async () => {
     const url = await AsyncStorage.getItem('SERVER_URL');
     if (url !== null) setServerUrl(url);
 
-    // Cargar/normalizar COUNT_TIMES (default 1)
     const ct = await AsyncStorage.getItem(COUNT_TIMES_KEY);
     if (ct === null) {
       setCountTimesInput('1');
@@ -78,14 +95,16 @@ export default function Ajustes() {
       }
     }
 
-    // Cargar WiFi objetivo; si no existe, dejamos '' (vacío) para que el banner use "wifipost"
     const wn = await AsyncStorage.getItem(WIFI_TARGET_NAME_KEY);
     setWifiNameInput(wn ?? '');
+
+    const pos = await AsyncStorage.getItem(POS_MODE_KEY);
+    if (pos !== null) setPosModeEnabled(JSON.parse(pos));
+
+    await loadExchangeRates();
   };
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  useEffect(() => { loadSettings(); }, []);
 
   return (
     <KeyboardAvoidingView
@@ -97,11 +116,9 @@ export default function Ajustes() {
           Ajustes Generales
         </Text>
 
-        {/* Cambiar tema */}
+        {/* Tema Oscuro */}
         <View style={styles.settingRow}>
-          <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
-            Tema Oscuro
-          </Text>
+          <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>Tema Oscuro</Text>
           <Switch
             value={isDark}
             onValueChange={toggleTheme}
@@ -110,20 +127,18 @@ export default function Ajustes() {
           />
         </View>
 
-        {/* Notificaciones (opcional) */}
-        {false && (
-          <View className="settingRow">
-            <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
-              Notificaciones
-            </Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={toggleNotifications}
-              trackColor={{ false: '#ccc', true: '#4ADE80' }}
-              thumbColor={notificationsEnabled ? '#10B981' : '#f4f3f4'}
-            />
-          </View>
-        )}
+        {/* Modo punto de venta */}
+        <View style={styles.settingRow}>
+          <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
+            Modo punto de venta
+          </Text>
+          <Switch
+            value={posModeEnabled}
+            onValueChange={togglePosMode}
+            trackColor={{ false: '#ccc', true: '#4ADE80' }}
+            thumbColor={posModeEnabled ? '#10B981' : '#f4f3f4'}
+          />
+        </View>
 
         {/* URL Servidor */}
         <View style={styles.settingRowColumn}>
@@ -135,10 +150,7 @@ export default function Ajustes() {
             onChangeText={handleServerUrlChange}
             placeholder="https://miapi.com"
             placeholderTextColor="#9CA3AF"
-            style={[
-              styles.input,
-              isDark ? styles.inputDark : styles.inputLight,
-            ]}
+            style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -156,38 +168,48 @@ export default function Ajustes() {
             keyboardType="numeric"
             placeholder="1"
             placeholderTextColor="#9CA3AF"
-            style={[
-              styles.input,
-              isDark ? styles.inputDark : styles.inputLight,
-            ]}
+            style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
           />
-          <Text style={[styles.hint, isDark ? styles.textDark : styles.textLight]}>
-            Debe ser un número entero ≥ 1. Si dejas el campo vacío, se guardará 1.
-          </Text>
         </View>
 
-        {/* ← NUEVO: Nombre de la Wi‑Fi objetivo */}
+        {/* Nombre Wi-Fi */}
         <View style={styles.settingRowColumn}>
           <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
-            Nombre de la Wi‑Fi objetivo
+            Nombre de la Wi-Fi objetivo
           </Text>
           <TextInput
             value={wifiNameInput}
             onChangeText={setWifiNameInput}
             onBlur={commitWifiName}
-            placeholder='Ej: "MiRedLocal" (vacío = "wifipost")'
+            placeholder='Ej: "MiRedLocal"'
             placeholderTextColor="#9CA3AF"
-            style={[
-              styles.input,
-              isDark ? styles.inputDark : styles.inputLight,
-            ]}
+            style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <Text style={[styles.hint, isDark ? styles.textDark : styles.textLight]}>
-            Si dejas este campo vacío, se tomará <Text style={{ fontWeight: '700' }}>wifipost</Text> por defecto.
-          </Text>
         </View>
+
+        {/* Tasas de cambio */}
+        <Text style={[styles.sectionTitle, isDark ? styles.textDark : styles.textLight]}>
+          Tasas de cambio
+        </Text>
+        {EXCHANGE_KEYS.map(currency => (
+          <View key={currency} style={styles.settingRowColumn}>
+            <Text style={[styles.label, isDark ? styles.textDark : styles.textLight]}>
+              {currency}
+            </Text>
+            <TextInput
+              value={exchangeRates[currency] ?? ''}
+              onChangeText={text => handleExchangeChange(currency, text)}
+              onBlur={() => commitExchange(currency)}
+              keyboardType="numeric"
+              placeholder="0.00"
+              placeholderTextColor="#9CA3AF"
+              style={[styles.input, isDark ? styles.inputDark : styles.inputLight]}
+            />
+          </View>
+        ))}
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -197,11 +219,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 20, gap: 20 },
   sectionTitle: { fontSize: 22, fontWeight: 'bold' },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   settingRowColumn: { flexDirection: 'column', gap: 8 },
   label: { fontSize: 16, fontWeight: '600' },
   input: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 15 },
@@ -211,5 +229,4 @@ const styles = StyleSheet.create({
   light: { backgroundColor: '#FFFFFF' },
   textDark: { color: '#F3F4F6' },
   textLight: { color: '#111827' },
-  hint: { fontSize: 12, opacity: 0.7 },
 });

@@ -304,16 +304,16 @@ export default function LocalScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: themeColors.card }]}>
             <Text style={[styles.modalTitle, { color: themeColors.text }]}>{help.title}</Text>
-            <ScrollView style={{height:"80%" }}>
-            {/* <Image source={help.image} style={{ height:"auto",width:"100%kc",marginVertical: 12, resizeMode: 'contain' }} /> */}
-               {help.content.map((section, idx) => (
-              <View key={idx} style={{ marginBottom: 12 }}>
-                <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
-                <Text style={{ color: themeColors.text }}>{section.content}</Text>
-              </View>
-            ))}
+            <ScrollView style={{ height: "80%" }}>
+              {/* <Image source={help.image} style={{ height:"auto",width:"100%kc",marginVertical: 12, resizeMode: 'contain' }} /> */}
+              {help.content.map((section, idx) => (
+                <View key={idx} style={{ marginBottom: 12 }}>
+                  <Text style={{ fontWeight: '600', color: themeColors.text }}>{section.subtitle}</Text>
+                  <Text style={{ color: themeColors.text }}>{section.content}</Text>
+                </View>
+              ))}
             </ScrollView>
-           
+
             <TouchableOpacity
               onPress={() => setHelpVisible(false)}
               style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}
@@ -337,7 +337,11 @@ export default function LocalScreen() {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.modalItem}
-                  onPress={() => {
+                  onPress={async () => {
+                    await AsyncStorage.removeItem('CAJA_DATA');
+                    await AsyncStorage.removeItem('CASA_DATA');
+                    await AsyncStorage.removeItem('INITIAL_COUNTS');
+                    await AsyncStorage.removeItem('DESGLOSE_DATA');
                     setSelectedLocal(item.id);
                     setLocalModalVisible(false);
                   }}

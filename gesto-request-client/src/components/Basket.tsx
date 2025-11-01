@@ -12,8 +12,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
   Modal,
   Pressable,
 } from "react-native";
@@ -31,13 +29,15 @@ import {
 } from "@/services/pedidos.service";
 
 const standar: Record<string, string> = { mass: "g", units: "u", volume: "mL", distance: "cm" };
-// (2) Aceptar coma o punto
 const cantidadRegex = /^\d*[.,]?\d{0,2}$/;
 const COUNT_TIMES_KEY = "COUNT_TIMES";
+const POS_MODE_KEY = "POS_MODE";
+const CASA_DATA_KEY = "CASA_DATA"; // clave para guardar casa
+const INITIAL_COUNTS_KEY = "INITIAL_COUNTS";
 
 interface BasketProps {
   title: string;
-  url: "initial" | "request" | "checkout" | "final" | string;
+  url: "initial" | "request" | "checkout" | "final" | "casa" | string;
   help: {
     title: string;
     image: ImageSourcePropType;
@@ -65,6 +65,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [productos, setProductos] = useState<any[]>([]);
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [hasReported, setHasReported] = useState(false);
+  const [casaMap, setCasaMap] = useState({});
   const [helpVisible, setHelpVisible] = useState(false);
   const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string }>({
     visible: false,
@@ -72,10 +73,16 @@ export default function Basket({ title, url, help }: BasketProps) {
 
   const [query, setQuery] = useState("");
   const [countTimes, setCountTimes] = useState<number>(1);
+  const [posModeEnabled, setPosModeEnabled] = useState<boolean>(false);
+
+  // validaciones (si las usas)
+  const [isDesgloseValid, setIsDesgloseValid] = useState<boolean>(false);
+  const [isCasaValid, setIsCasaValid] = useState<boolean>(false);
+
+  const [loadingItems, setLoadingItems] = useState<boolean>(false); // ← loader
 
   const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
-  const scrollOffsetRef = useRef(0);
 
   const { theme } = useAppTheme();
   const isDark = theme === "dark";
@@ -94,6 +101,42 @@ export default function Basket({ title, url, help }: BasketProps) {
     accent: isDark ? "#F59E0B" : "#d35400",
   };
 
+  // ------------ validadores simples (puedes adaptar las claves/logic) -------------
+  // reemplaza la función validateDesglose por esta:
+  // Reemplaza validateDesglose por esta versión:
+
+
+  // y agrega este useEffect para re-evaluar cuando cambie el importe (income)
+  // colócalo después de las definiciones de income / filteredProductos
+
+  const validateCasa = async (): Promise<boolean> => {
+    try {
+      const raw = await AsyncStorage.getItem(CASA_DATA_KEY);
+      if (!raw) return false;
+
+      const parsed = JSON.parse(raw);
+      const savedAtRaw = parsed?.meta?.savedAt ?? parsed?.savedAt;
+      if (!savedAtRaw) return false;
+
+      const savedDate = new Date(savedAtRaw);
+      if (Number.isNaN(savedDate.getTime())) return false;
+
+      const now = new Date();
+
+      // Comparar año, mes y día locales
+      const sameDay =
+        savedDate.getFullYear() === now.getFullYear() &&
+        savedDate.getMonth() === now.getMonth() &&
+        savedDate.getDate() === now.getDate();
+
+      return sameDay;
+    } catch {
+      return false;
+    }
+  };
+
+  // -------------------------------------------------------------------------------
+
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -103,6 +146,17 @@ export default function Basket({ title, url, help }: BasketProps) {
         if (isNaN(ct) || ct < 1) ct = 1;
         if (!isActive) return;
         setCountTimes(ct);
+
+        const posRaw = await AsyncStorage.getItem(POS_MODE_KEY);
+        if (!isActive) return;
+        setPosModeEnabled(posRaw ? JSON.parse(posRaw) : false);
+
+        // ejecutar validaciones
+        const [desgOk, casaOk] = await Promise.all([validateDesglose(), validateCasa()]);
+        if (!isActive) return;
+        setIsDesgloseValid(Boolean(desgOk));
+        setIsCasaValid(Boolean(casaOk));
+
         await load(ct);
       };
       run();
@@ -128,20 +182,67 @@ export default function Basket({ title, url, help }: BasketProps) {
     });
   }, []);
 
+  // ---------- load: ahora prefill desde CASA_DATA_KEY cuando url === 'casa' ----------
   const load = async (ctForShape?: number) => {
+    setLoadingItems(true);
     try {
       const areaId = await AsyncStorage.getItem("selectedLocal");
       const userId = await AsyncStorage.getItem("selectedResponsable");
-      if (!areaId || !userId) return router.push({ pathname: "/" });
+      if (!areaId || !userId) {
+        setLoadingItems(false);
+        return router.push({ pathname: "/" });
+      }
 
       const saved = await getProductsSaved(url);
-      const shaped = ensureCountsShape(saved, ctForShape ?? countTimes);
-      setProductos(shaped);
+
+      // crear mapa de cantidades desde CASA_DATA_KEY (si existe)
+      let casaMap: Record<string, string> = {};
+      try {
+        const casaRaw = await AsyncStorage.getItem(CASA_DATA_KEY);
+        if (casaRaw) {
+          const parsed = JSON.parse(casaRaw);
+          const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+          for (const it of items) {
+            if (it && it.id != null) {
+              // normalizar quantity a string con punto decimal
+              const q = it.quantity ?? "";
+              casaMap[String(it.id)] = String(q).replace(",", ".");
+            }
+          }
+        }
+      } catch (e) {
+        // ignore parse errors, dejar casaMap vacío
+        casaMap = {};
+      }
+
+      // prefill productos: usar cantidad de casaMap si url==='casa', si no => usar ensureCountsShape
+      const shaped = saved.map((p: any) => {
+        const base = { ...p };
+        if (url === "casa") {
+          const qFromCasa = casaMap[String(p.id)];
+          const qNormalized = qFromCasa !== undefined && qFromCasa !== null && qFromCasa !== "" ? String(Number(String(qFromCasa).replace(",", "."))) : "0";
+          // construir counts con primer slot = qNormalized y resto ""
+          const counts = new Array(ctForShape ?? countTimes).fill("");
+          counts[0] = qNormalized;
+          const total = sumCounts(counts);
+          base.counts = counts;
+          base.quantity = total ? String(total) : counts[0] || "0";
+        }
+        return base;
+      });
+
+      // Asegurar shape conforme countTimes
+      const finalShaped = ensureCountsShape(shaped, ctForShape ?? countTimes);
+      setProductos(finalShaped);
       setHasReported(saved.some((p: any) => !!p.reported));
+      setCasaMap(casaMap)
     } catch (e) {
       Alert.alert("Error cargando los productos", String(e));
+    } finally {
+      setLoadingItems(false);
     }
   };
+  // ------------------------------------------------------------------------------
 
   useEffect(() => {
     if (!productos.length) return;
@@ -153,7 +254,8 @@ export default function Basket({ title, url, help }: BasketProps) {
     const timer = setTimeout(async () => {
       try {
         setSyncStatus("loading");
-        await syncProducts(url, productos);
+        // no sincronizamos cuando estamos en 'casa' (evitamos escrituras innecesarias)
+        url !== "casa" && (await syncProducts(url, productos));
         setSyncStatus("success");
       } catch {
         setSyncStatus("error");
@@ -164,14 +266,16 @@ export default function Basket({ title, url, help }: BasketProps) {
     return () => clearTimeout(timer);
   }, [productos, url]);
 
-  const actualizarCantidad = (id: string, nuevaCantidad: string) => {
+  const actualizarCantidad = (id: string, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
+    if (url == "casa" && maxQuantity!=null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return
     if (url === "checkout") setHasReported(false);
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
   };
 
-  const actualizarCantidadParcial = (id: string, countIndex: number, nuevaCantidad: string) => {
+  const actualizarCantidadParcial = (id: string, countIndex: number, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
+    if (url == "casa" &&  maxQuantity!=null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return
     setProductos((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
@@ -216,15 +320,13 @@ export default function Basket({ title, url, help }: BasketProps) {
   };
 
   const getContainerStyle = (item: any) => {
-    if (item.price===null && url!="request")
+    if (item.price === null && url !== "request" && url !== "casa")
       return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: themeColors.background }];
-    return [styles.productoContainer,  { backgroundColor: themeColors.card, borderColor: themeColors.border }];
+    return [styles.productoContainer, { backgroundColor: themeColors.card, borderColor: themeColors.border }];
   };
 
-  const hayExcesoDeCantidad = productos.some((p) => {
-    const qty = parseFloat(p.quantity || "0");
-    const stk = parseFloat(p.stock ?? "0");
-    return p.price===null;
+  const productosSinPrecio = productos.some((p) => {
+    return p.price === null;
   });
 
   const ejecutarAccion = async (accion: string) => {
@@ -260,14 +362,122 @@ export default function Basket({ title, url, help }: BasketProps) {
     return productos.filter((p) => normalize(p.name).includes(q));
   }, [productos, query]);
 
-   const income = useMemo(() => {
-    return productos.reduce((acc,item) => acc+item.monto,0);
+  const income = useMemo(() => {
+    return productos.reduce((acc, item) => {
+      console.log(parseFloat(casaMap[item.id] ?? 0));
+      return acc + (item.monto || 0) - (parseFloat(casaMap[item.id] ?? 0) * item.price)
+    }, 0);
   }, [productos]);
+  const validateDesglose = useCallback(async (): Promise<boolean> => {
+    try {
+      const raw = await AsyncStorage.getItem("DESGLOSE_DATA");
+      if (!raw) return false;
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return false;
+
+      // Buscar totals en varias formas posibles
+      const totals = parsed.totals ?? null;
+      if (!totals || typeof totals !== "object") return false;
+      // Condición: totalCaja >= importe (si quieres strict '>' cámbialo aquí)
+      return totals.totalCaja >= income;
+    } catch (e) {
+      // cualquier error => inválido (no permitimos que el botón se ponga verde por error)
+      console.warn("validateDesglose error:", e);
+      return false;
+    }
+  }, [income]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const ok = await validateDesglose();
+        if (mounted) setIsDesgloseValid(Boolean(ok));
+      } catch {
+        if (mounted) setIsDesgloseValid(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [income, /* si quieres también dispararlo cuando cambie el DESGLOSE_DATA explícitamente: */ productos, casaMap]);
+
 
   const onSearchFocus = useCallback(() => {
     if (!query) return;
     setQuery("");
   }, [query]);
+
+  // --- Guardar Casa: construir array [{id, quantity}] y guardar en AsyncStorage (solo >0)
+  const saveCasa = async () => {
+    try {
+      // Reducir+filtrar en una sola pasada: solo ids con cantidad numérica > 0
+      const items = productos.reduce((acc: { id: any; quantity: string }[], p) => {
+        // obtener quantity priorizando p.quantity; si está vacío, sumar p.counts
+        let q = p.quantity;
+        if (q === undefined || q === null || q === "") {
+          if (Array.isArray(p.counts) && p.counts.length) {
+            const s = sumCounts(p.counts);
+            q = s ? String(s) : "";
+          } else {
+            q = "";
+          }
+        }
+        // normalizar coma -> punto y parsear
+        const n = Number(String(q).replace(",", "."));
+        if (!isNaN(n) && n > 0) {
+          // guardamos como string normalizado
+          acc.push({ id: p.id, quantity: String(n) });
+        }
+        return acc;
+      }, []);
+
+      // meta + items para CASA_DATA_KEY
+      const meta = { savedAt: new Date().toISOString() };
+      await AsyncStorage.setItem(CASA_DATA_KEY, JSON.stringify({ meta, items }));
+
+      // también guardamos las cantidades como "cantidades iniciales"
+      await AsyncStorage.setItem(INITIAL_COUNTS_KEY, JSON.stringify(items));
+
+      Alert.alert("Guardado", "Los datos de Casa y las cantidades iniciales se guardaron correctamente.");
+      router.push({ pathname: "/(tabs)/final" })
+      setIsCasaValid(true);
+    } catch (e) {
+      Alert.alert("Error", "No se pudo guardar Casa: " + String(e));
+    }
+  };
+
+  // ====== acciones: Desglose / Casa (navegación) ======
+  const onPressDesglose = useCallback(() => {
+    router.push({ pathname: "/desgloce", params: { importe: income, comision: 10 } });
+  }, [income]);
+
+  const onPressCasa = () => {
+    router.push({ pathname: "/casa" });
+  };
+
+  // Colores dinámicos según validaciones
+  const desgloseBg = isDesgloseValid ? themeColors.success : themeColors.warning;
+  const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
+
+  // Determina si Guardar Final está habilitado (ambas validaciones true)
+  const canSaveFinal = isDesgloseValid && isCasaValid && (income>=0);
+
+  // true si hay al menos un producto con cantidad > 0 (usado para habilitar Guardar Casa)
+  const hasCasaQuantities = useMemo(() => {
+    return productos.some((p) => {
+      let q = p.quantity;
+      if (q === undefined || q === null || q === "") {
+        if (Array.isArray(p.counts) && p.counts.length) {
+          const s = sumCounts(p.counts);
+          q = s ? String(s) : "";
+        }
+      }
+      const n = Number(String(q ?? "").replace(",", "."));
+      return !isNaN(n) && n > 0;
+    });
+  }, [productos, countTimes]);
 
   // ====== BLOQUES UI ======
   const TotalInline = ({ value }: { value: string }) => (
@@ -284,13 +494,14 @@ export default function Basket({ title, url, help }: BasketProps) {
     </View>
   );
 
+  // Conteos e inputs: se mantienen para las otras rutas (initial/final...), pero si url === 'casa' la lista será simplificada
   const CountsRight = (item: any, prodIndex: number) => {
     const editable = !((url === "initial" || url === "request") && hasReported);
     const counts: string[] = Array.isArray(item.counts)
       ? (item.counts.length === countTimes
-          ? item.counts
-          : [...item.counts, ...new Array(Math.max(0, countTimes - item.counts.length)).fill("")]
-        ).slice(0, countTimes)
+        ? item.counts
+        : [...item.counts, ...new Array(Math.max(0, countTimes - item.counts.length)).fill("")]
+      ).slice(0, countTimes)
       : new Array(countTimes).fill("");
 
     const inputWidth = countTimes === 2 ? "48%" : "100%";
@@ -316,10 +527,10 @@ export default function Basket({ title, url, help }: BasketProps) {
                   },
                 ]}
                 keyboardType="decimal-pad"
-                inputMode="decimal"           // (4) hint web
+                inputMode="decimal"
                 editable={editable}
                 value={val ?? ""}
-                onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text)}
+                onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text, item.sold)}
                 onSubmitEditing={() => handleSubmitMulti(prodIndex, cIdx, filteredProductos.length)}
                 placeholder="0"
                 placeholderTextColor="#888"
@@ -336,9 +547,9 @@ export default function Basket({ title, url, help }: BasketProps) {
     const editable = !((url === "initial" || url === "request") && hasReported);
     const counts: string[] = Array.isArray(item.counts)
       ? (item.counts.length === countTimes
-          ? item.counts
-          : [...item.counts, ...new Array(Math.max(0, countTimes - item.counts.length)).fill("")]
-        ).slice(0, countTimes)
+        ? item.counts
+        : [...item.counts, ...new Array(Math.max(0, countTimes - item.counts.length)).fill("")]
+      ).slice(0, countTimes)
       : new Array(countTimes).fill("");
 
     return (
@@ -361,10 +572,10 @@ export default function Basket({ title, url, help }: BasketProps) {
                 },
               ]}
               keyboardType="decimal-pad"
-              inputMode="decimal"           // (4) hint web
+              inputMode="decimal"
               editable={editable}
               value={val ?? ""}
-              onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text)}
+              onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text, item.sold)}
               onSubmitEditing={() => handleSubmitMulti(prodIndex, cIdx, filteredProductos.length)}
               placeholder="0"
               placeholderTextColor="#888"
@@ -394,6 +605,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     </View>
   );
 
+  // RENDER ITEM adaptado: si url === 'casa' mostramos solo name + netContent y cantidad (si quieres)
   const renderItem = useCallback(
     ({ item, index }: { item: any; index: number }) => {
       const isMulti = url === "initial" || url === "final";
@@ -418,13 +630,13 @@ export default function Basket({ title, url, help }: BasketProps) {
                   },
                 ]}
                 keyboardType="decimal-pad"
-                inputMode="decimal"         // (4) hint web
+                inputMode="decimal"
                 editable={!((url === "initial" || url === "request") && hasReported)}
                 value={item.quantity?.toString() || ""}
-                onChangeText={(text) => actualizarCantidad(item.id, text)}
+                onChangeText={(text) => actualizarCantidad(item.id, text, item.sold)}
                 onSubmitEditing={() => handleSubmit(index, filteredProductos.length)}
                 placeholder="Cantidad"
-                 blurOnSubmit={false}
+                blurOnSubmit={false}
                 placeholderTextColor="#888"
                 returnKeyType="next"
               />
@@ -497,8 +709,8 @@ export default function Basket({ title, url, help }: BasketProps) {
     <>
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: themeColors.background }}
-             behavior={Platform.OS === "ios" ? "padding" : "height"}
-    keyboardVerticalOffset={60}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={60}
       >
         <View style={{ flex: 1 }}>
           {/* Header */}
@@ -509,19 +721,17 @@ export default function Basket({ title, url, help }: BasketProps) {
               </Text>
               <View style={styles.topRight}>
                 <View style={styles.syncIcon}>{renderSyncStatus()}</View>
-                
                 <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Ayuda</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {hayExcesoDeCantidad && url !== "request" && (
+            {productosSinPrecio && url !== "request" && url !== "casa" && (
               <View style={styles.warningBanner}>
                 <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>⚠️ Los productos con el borde rojo no tienen precio asignado, el importe debe calcularse manualmente para estos. (Marcados en rojo)</Text>
               </View>
             )}
-            
 
             <View style={styles.headerBottomRow}>
               <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
@@ -532,7 +742,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                   onFocus={onSearchFocus}
                   placeholder="Buscar..."
                   placeholderTextColor="#888"
-                   blurOnSubmit={false}
+                  blurOnSubmit={false}
                   style={[styles.searchInput, { color: themeColors.inputText }]}
                   returnKeyType="search"
                   autoCorrect={false}
@@ -548,6 +758,21 @@ export default function Basket({ title, url, help }: BasketProps) {
                 <TouchableOpacity onPress={() => load(countTimes)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Actualizar</Text>
                 </TouchableOpacity>
+
+                {/* Si estoy en la ruta 'casa', muestro botón Guardar Casa */}
+                {url === "casa" && (
+                  <TouchableOpacity
+                    onPress={saveCasa}
+                    style={[
+                      styles.actionButton,
+                      !hasCasaQuantities && styles.disabledButton,
+                      { backgroundColor: themeColors.primary },
+                    ]}
+                  // disabled={!hasCasaQuantities}
+                  >
+                    <Text style={[styles.actionText]}>Guardar Casa</Text>
+                  </TouchableOpacity>
+                )}
 
                 {url === "initial" && (
                   <TouchableOpacity
@@ -572,32 +797,60 @@ export default function Basket({ title, url, help }: BasketProps) {
                     </Text>
                   </TouchableOpacity>
                 )}
-
-                {url === "checkout" && (
-                  <TouchableOpacity
-                    onPress={() => !hayExcesoDeCantidad && hasReported && handleAction("Mover al área")}
-                    style={[styles.actionButton, (hayExcesoDeCantidad || !hasReported) && styles.disabledButton, { backgroundColor: themeColors.primary }]}
-                    disabled={hayExcesoDeCantidad || !hasReported}
-                  >
-                    <Text style={[styles.actionText, (hayExcesoDeCantidad || !hasReported) && styles.disabledText]}>
-                      {hayExcesoDeCantidad ? "Stock insuficiente" : !hasReported ? "Esperando aprovación" : "Mover al área"}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
                 {url === "final" && (
-                  <TouchableOpacity onPress={() => handleAction("Guardar Final")} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
-                    <Text style={styles.actionText}>Guardar Final</Text>
+                  <TouchableOpacity
+                    onPress={() => handleAction("Guardar Final")}
+                    style={[
+                      styles.actionButton,
+                      (!canSaveFinal) && styles.disabledButton,
+                      { backgroundColor: canSaveFinal ? themeColors.primary : themeColors.disabled },
+                    ]}
+                    disabled={!canSaveFinal}
+                  >
+                    <Text style={[styles.actionText, (!canSaveFinal) && styles.disabledText]}>Guardar Final</Text>
                   </TouchableOpacity>
                 )}
-                
               </View>
-            </View>{url == "final" && (
-              <View>
-              <Text style={[styles.importText,{color:themeColors.text}]}>Importe: ${income}</Text>
+            </View>
+
+            {/* IMPORTANTE: Mostrar Importe y botones sólo cuando url === 'final' AND modo punto de venta activo */}
+            {url === "final" && posModeEnabled && (
+              <View style={[styles.importRow, { borderColor: themeColors.border, marginTop: 8 }]}>
+                <Text style={[styles.importText, { color: themeColors.text }]}>Importe: ${income}</Text>
+
+                <View style={styles.buttonsRow}>
+                  <TouchableOpacity
+                    onPress={onPressDesglose}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: desgloseBg },
+                      !isDesgloseValid && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={styles.actionText}>Desglose</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={onPressCasa}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: casaBg },
+                      !isCasaValid && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={styles.actionText}>Casa</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
+
+          {/* Loader overlay mientras cargan los items */}
+          {loadingItems && (
+            <View style={styles.loaderOverlay}>
+              <ActivityIndicator size="large" color={themeColors.primary} />
+            </View>
+          )}
 
           {/* Lista virtualizada */}
           <FlatList
@@ -612,11 +865,10 @@ export default function Basket({ title, url, help }: BasketProps) {
               paddingBottom: 10,
             }}
             keyboardShouldPersistTaps="always"
-  keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             scrollEventThrottle={16}
             initialNumToRender={12}
             maxToRenderPerBatch={12}
-            
             windowSize={10}
             removeClippedSubviews
           />
@@ -728,7 +980,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  // Filas de producto
   row: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -740,14 +991,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  // Info producto
   infoLeft: {
     flex: 1,
-    flexShrink: 1,          // (1) quitar marginRight, usar flex puro
+    flexShrink: 1,
   },
-  // (1) 60% / 40% con flex ratios
   infoSixty: {
-    flex: 3,                // ≈ 60%
+    flex: 3,
   },
 
   nombre: {
@@ -757,14 +1006,12 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
 
-  // Total inline (izquierda)
   totalTextInline: {
     marginTop: 6,
     fontSize: 16,
     fontWeight: "800",
   },
 
-  // Input único (no-multi) - (3) mínimo 20% del contenedor
   inputFlex: {
     borderWidth: 1,
     borderRadius: 6,
@@ -776,9 +1023,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
-  // Mitad derecha para conteos (countTimes < 3) - (1) usar flex ratio
   rightForty: {
-    flex: 2,                // ≈ 40%
+    flex: 2,
   },
   countsRightInner: {
     flexDirection: "row",
@@ -786,7 +1032,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  // Conteos (debajo cuando countTimes >= 3)
   countsRowStack: {
     marginTop: 8,
     flexDirection: "row",
@@ -794,7 +1039,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  // Base de cada input de conteo
   countInputBase: {
     borderWidth: 1,
     borderRadius: 6,
@@ -803,13 +1047,12 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginBottom: 8,
   },
-  // En Stack (≥3): 3 por fila
+
   countInputStack: {
     width: "30%",
     minWidth: 80,
   },
 
-  // Cabecera para stacked (info izquierda + total derecha)
   headerStackRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -839,7 +1082,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  // Overlays / Modales
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -886,10 +1128,36 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
-   importText: {
+
+  importRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+
+  buttonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  smallButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    minWidth: 88,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  importText: {
     fontWeight: "900",
     fontSize: 14,
   },
+
   syncIcon: {
     marginLeft: 6,
     alignItems: "center",
@@ -901,5 +1169,18 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: "#7f8c8d",
+  },
+
+  // loader overlay
+  loaderOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
+    zIndex: 1000,
   },
 });
