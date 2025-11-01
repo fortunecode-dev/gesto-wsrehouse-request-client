@@ -3,7 +3,7 @@
     "name": "Pedido",
     "userInterfaceStyle": "automatic",
     "slug": "gesto-request-client",
-    "version": "1.0.0",
+    "version": "beta2.0.0",
     "web": {
       "bundler": "metro",
       "output": "static",
