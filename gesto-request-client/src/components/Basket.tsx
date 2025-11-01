@@ -28,13 +28,23 @@ import {
   syncProducts,
 } from "@/services/pedidos.service";
 
+/* ============================
+   Constantes y tipos
+   ============================ */
+
+/** Mapeo para unidades */
 const standar: Record<string, string> = { mass: "g", units: "u", volume: "mL", distance: "cm" };
+
+/** Regex que valida cantidades con hasta 2 decimales (coma o punto) */
 const cantidadRegex = /^\d*[.,]?\d{0,2}$/;
+
+/** Claves de AsyncStorage usadas por el componente */
 const COUNT_TIMES_KEY = "COUNT_TIMES";
 const POS_MODE_KEY = "POS_MODE";
-const CASA_DATA_KEY = "CASA_DATA"; // clave para guardar casa
+const CASA_DATA_KEY = "CASA_DATA";
 const INITIAL_COUNTS_KEY = "INITIAL_COUNTS";
 
+/** Props del componente */
 interface BasketProps {
   title: string;
   url: "initial" | "request" | "checkout" | "final" | "casa" | string;
@@ -45,6 +55,14 @@ interface BasketProps {
   };
 }
 
+/* ============================
+   Utilidades puras
+   ============================ */
+
+/**
+ * Normaliza texto para búsquedas (quita tildes, pasa a minúsculas y trim).
+ * @param str texto a normalizar
+ */
 function normalize(str: string) {
   return (str || "")
     .normalize("NFD")
@@ -53,6 +71,11 @@ function normalize(str: string) {
     .trim();
 }
 
+/**
+ * Suma un array de valores que pueden ser string/number (acepta coma decimal).
+ * Retorna number.
+ * @param arr array de strings o números
+ */
 function sumCounts(arr: (string | number)[]) {
   return arr.reduce((acc, val) => {
     const n = parseFloat(String(val).replace(",", "."));
@@ -61,11 +84,18 @@ function sumCounts(arr: (string | number)[]) {
   }, 0);
 }
 
+/* ============================
+   Componente principal
+   ============================ */
+
 export default function Basket({ title, url, help }: BasketProps) {
+  /* ----------------------------
+     Estado local
+     ---------------------------- */
   const [productos, setProductos] = useState<any[]>([]);
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [hasReported, setHasReported] = useState(false);
-  const [casaMap, setCasaMap] = useState({});
+  const [casaMap, setCasaMap] = useState<Record<string, string>>({});
   const [helpVisible, setHelpVisible] = useState(false);
   const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string }>({
     visible: false,
@@ -75,15 +105,20 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [countTimes, setCountTimes] = useState<number>(1);
   const [posModeEnabled, setPosModeEnabled] = useState<boolean>(false);
 
-  // validaciones (si las usas)
+  // Validaciones/flags usados en la UI
   const [isDesgloseValid, setIsDesgloseValid] = useState<boolean>(false);
   const [isCasaValid, setIsCasaValid] = useState<boolean>(false);
 
-  const [loadingItems, setLoadingItems] = useState<boolean>(false); // ← loader
+  // Loader interno para la lista
+  const [loadingItems, setLoadingItems] = useState<boolean>(false);
 
+  // Refs para manejo de focus en los inputs
   const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
 
+  /* ----------------------------
+     Theme (colores dinámicos)
+     ---------------------------- */
   const { theme } = useAppTheme();
   const isDark = theme === "dark";
   const themeColors = {
@@ -101,14 +136,49 @@ export default function Basket({ title, url, help }: BasketProps) {
     accent: isDark ? "#F59E0B" : "#d35400",
   };
 
-  // ------------ validadores simples (puedes adaptar las claves/logic) -------------
-  // reemplaza la función validateDesglose por esta:
-  // Reemplaza validateDesglose por esta versión:
+  /* ============================
+     Helpers y validaciones async
+     ============================ */
 
+  /**
+   * validateDesglose
+   * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
+   * Retorna true si totals.totalCaja >= income.
+   */
+  const validateDesglose = useCallback(async (): Promise<boolean> => {
+    try {
+      const raw = await AsyncStorage.getItem("DESGLOSE_DATA");
+      if (!raw) return false;
 
-  // y agrega este useEffect para re-evaluar cuando cambie el importe (income)
-  // colócalo después de las definiciones de income / filteredProductos
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return false;
 
+      // acceder a parsed.totals (esperado)
+      const totals = parsed.totals ?? null;
+      if (!totals || typeof totals !== "object") return false;
+
+      // Normalizar y parsear totalCaja
+      const totalCajaRaw = totals.totalCaja ?? totals.total ?? totals.total_caja ?? null;
+      if (totalCajaRaw === null || totalCajaRaw === undefined) return false;
+
+      const totalCaja = Number(String(totalCajaRaw).replace(",", "."));
+      if (Number.isNaN(totalCaja)) return false;
+
+      const importe = Number(income ?? 0);
+      if (Number.isNaN(importe)) return false;
+
+      // Condición: totalCaja >= importe
+      return totalCaja >= importe;
+    } catch (e) {
+      console.warn("validateDesglose error:", e);
+      return false;
+    }
+  }, /* deps */[/* income está definido más abajo; lo referenciamos vía closure en useEffect */]);
+
+  /**
+   * validateCasa
+   * Comprueba si CASA_DATA existe y fue guardado el mismo día (meta.savedAt).
+   */
   const validateCasa = async (): Promise<boolean> => {
     try {
       const raw = await AsyncStorage.getItem(CASA_DATA_KEY);
@@ -123,7 +193,7 @@ export default function Basket({ title, url, help }: BasketProps) {
 
       const now = new Date();
 
-      // Comparar año, mes y día locales
+      // Comparar solo año/mes/día (misma jornada)
       const sameDay =
         savedDate.getFullYear() === now.getFullYear() &&
         savedDate.getMonth() === now.getMonth() &&
@@ -135,37 +205,81 @@ export default function Basket({ title, url, help }: BasketProps) {
     }
   };
 
-  // -------------------------------------------------------------------------------
+  /* ============================
+     Efectos de carga y sincronización
+     ============================ */
 
+  /**
+   * useFocusEffect: se ejecuta cuando la pantalla toma foco.
+   * - Carga configuraciones (COUNT_TIMES, POS_MODE)
+   * - Ejecuta validaciones async (desglose y casa)
+   * - Carga productos (load)
+   */
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
+
       const run = async () => {
+        // Contador de slots (cuántas columnas de conteo)
         const ctRaw = await AsyncStorage.getItem(COUNT_TIMES_KEY);
         let ct = parseInt(ctRaw || "1", 10);
         if (isNaN(ct) || ct < 1) ct = 1;
         if (!isActive) return;
         setCountTimes(ct);
 
+        // Modo POS (si está activo)
         const posRaw = await AsyncStorage.getItem(POS_MODE_KEY);
         if (!isActive) return;
         setPosModeEnabled(posRaw ? JSON.parse(posRaw) : false);
 
-        // ejecutar validaciones
+        // Ejecutar validaciones en paralelo
         const [desgOk, casaOk] = await Promise.all([validateDesglose(), validateCasa()]);
         if (!isActive) return;
         setIsDesgloseValid(Boolean(desgOk));
         setIsCasaValid(Boolean(casaOk));
 
+        // Cargar productos (prefill desde CASA si aplica)
         await load(ct);
       };
+
       run();
+
       return () => {
         isActive = false;
       };
-    }, [url])
+    }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
   );
 
+  /**
+   * Cuando cambian los productos -> debounce de sincronización con backend (syncProducts)
+   * Evita sincronizar para la ruta 'casa' (evita escrituras innecesarias).
+   */
+  useEffect(() => {
+    if (!productos?.length) return;
+    const timer = setTimeout(async () => {
+      try {
+        setSyncStatus("loading");
+        if (url !== "casa") {
+          await syncProducts(url, productos);
+        }
+        setSyncStatus("success");
+      } catch {
+        setSyncStatus("error");
+      } finally {
+        setTimeout(() => setSyncStatus("idle"), 500);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [productos, url]);
+
+  /**
+   * Asegura que cuando cambie `countTimes` se reestructuren las counts de cada producto correctamente.
+   */
+  /**
+ * Asegura que cada producto tenga la propiedad `counts` con la longitud correcta (countTimes)
+ * y recalcula `quantity` como suma de counts (o primera entrada).
+ */
   const ensureCountsShape = useCallback((arr: any[], ct: number) => {
     return arr.map((p) => {
       let counts: string[] = Array.isArray(p.counts) ? [...p.counts] : [];
@@ -181,11 +295,25 @@ export default function Basket({ title, url, help }: BasketProps) {
       return { ...p, counts, quantity: total ? String(total) : counts[0] || "" };
     });
   }, []);
+  useEffect(() => {
+    if (!productos.length) return;
+    setProductos((prev) => ensureCountsShape(prev, countTimes));
+  }, [countTimes, ensureCountsShape, productos.length]);
 
-  // ---------- load: ahora prefill desde CASA_DATA_KEY cuando url === 'casa' ----------
+  /* ============================
+     Funciones auxiliares de manipulación de datos
+     ============================ */
+
+
+
+  /**
+   * Carga productos y, si url === 'casa', prefill con las cantidades guardadas en CASA_DATA_KEY.
+   * @param ctForShape opcional - número de columnas de conteo a forzar en el prefill
+   */
   const load = async (ctForShape?: number) => {
     setLoadingItems(true);
     try {
+      // Validación mínima: selectedLocal y selectedResponsable deben existir
       const areaId = await AsyncStorage.getItem("selectedLocal");
       const userId = await AsyncStorage.getItem("selectedResponsable");
       if (!areaId || !userId) {
@@ -193,10 +321,11 @@ export default function Basket({ title, url, help }: BasketProps) {
         return router.push({ pathname: "/" });
       }
 
+      // Obtener productos desde servicio
       const saved = await getProductsSaved(url);
 
-      // crear mapa de cantidades desde CASA_DATA_KEY (si existe)
-      let casaMap: Record<string, string> = {};
+      // Construir casaMap { id: quantity }
+      let casaMapLocal: Record<string, string> = {};
       try {
         const casaRaw = await AsyncStorage.getItem(CASA_DATA_KEY);
         if (casaRaw) {
@@ -204,24 +333,25 @@ export default function Basket({ title, url, help }: BasketProps) {
           const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
           for (const it of items) {
             if (it && it.id != null) {
-              // normalizar quantity a string con punto decimal
               const q = it.quantity ?? "";
-              casaMap[String(it.id)] = String(q).replace(",", ".");
+              casaMapLocal[String(it.id)] = String(q).replace(",", ".");
             }
           }
         }
       } catch (e) {
-        // ignore parse errors, dejar casaMap vacío
-        casaMap = {};
+        // si no parsea, dejamos el mapa vacío (no rompemos)
+        casaMapLocal = {};
       }
 
-      // prefill productos: usar cantidad de casaMap si url==='casa', si no => usar ensureCountsShape
+      // Prefill: si estamos en url 'casa' usamos casaMap, sino cargamos productos normalmente
       const shaped = saved.map((p: any) => {
         const base = { ...p };
         if (url === "casa") {
-          const qFromCasa = casaMap[String(p.id)];
-          const qNormalized = qFromCasa !== undefined && qFromCasa !== null && qFromCasa !== "" ? String(Number(String(qFromCasa).replace(",", "."))) : "0";
-          // construir counts con primer slot = qNormalized y resto ""
+          const qFromCasa = casaMapLocal[String(p.id)];
+          const qNormalized =
+            qFromCasa !== undefined && qFromCasa !== null && qFromCasa !== ""
+              ? String(Number(String(qFromCasa).replace(",", ".")))
+              : "0";
           const counts = new Array(ctForShape ?? countTimes).fill("");
           counts[0] = qNormalized;
           const total = sumCounts(counts);
@@ -231,57 +361,44 @@ export default function Basket({ title, url, help }: BasketProps) {
         return base;
       });
 
-      // Asegurar shape conforme countTimes
       const finalShaped = ensureCountsShape(shaped, ctForShape ?? countTimes);
       setProductos(finalShaped);
       setHasReported(saved.some((p: any) => !!p.reported));
-      setCasaMap(casaMap)
+      setCasaMap(casaMapLocal);
     } catch (e) {
       Alert.alert("Error cargando los productos", String(e));
     } finally {
       setLoadingItems(false);
     }
   };
-  // ------------------------------------------------------------------------------
 
-  useEffect(() => {
-    if (!productos.length) return;
-    setProductos((prev) => ensureCountsShape(prev, countTimes));
-  }, [countTimes, ensureCountsShape, productos.length]);
+  /* ============================
+     Handlers de cambio / inputs
+     ============================ */
 
-  useEffect(() => {
-    if (!productos?.length) return;
-    const timer = setTimeout(async () => {
-      try {
-        setSyncStatus("loading");
-        // no sincronizamos cuando estamos en 'casa' (evitamos escrituras innecesarias)
-        url !== "casa" && (await syncProducts(url, productos));
-        setSyncStatus("success");
-      } catch {
-        setSyncStatus("error");
-      } finally {
-        setTimeout(() => setSyncStatus("idle"), 500);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [productos, url]);
-
+  /**
+   * actualizarCantidad
+   * Actualiza la cantidad global (campo quantity) para un producto por id.
+   * Valida formato con cantidadRegex.
+   */
   const actualizarCantidad = (id: string, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if (url == "casa" && maxQuantity!=null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return
+    if (url == "casa" && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
   };
 
+  /**
+   * actualizarCantidadParcial
+   * Actualiza la celda específica dentro de counts (columna) y recalcula total local.
+   */
   const actualizarCantidadParcial = (id: string, countIndex: number, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if (url == "casa" &&  maxQuantity!=null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return
+    if (url == "casa" && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
     setProductos((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
-        const counts: string[] = Array.isArray(p.counts)
-          ? [...p.counts]
-          : new Array(countTimes).fill("");
+        const counts: string[] = Array.isArray(p.counts) ? [...p.counts] : new Array(countTimes).fill("");
         counts[countIndex] = nuevaCantidad;
         const total = sumCounts(counts);
         return { ...p, counts, quantity: total ? String(total) : "" };
@@ -289,6 +406,10 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
+  /**
+   * handleSubmit / handleSubmitMulti
+   * Helpers para avanzar focus entre inputs (UX).
+   */
   const handleSubmit = (prodIndex: number, dataLength: number) => {
     if (prodIndex + 1 < dataLength) {
       const nextRef = inputsRef.current[(prodIndex + 1) * Math.max(1, countTimes)];
@@ -306,6 +427,11 @@ export default function Basket({ title, url, help }: BasketProps) {
     else Keyboard.dismiss();
   };
 
+  /* ============================
+     UI helpers
+     ============================ */
+
+  /** Muestra estado de sincronización (loader / check / error) */
   const renderSyncStatus = () => {
     switch (syncStatus) {
       case "loading":
@@ -319,16 +445,25 @@ export default function Basket({ title, url, help }: BasketProps) {
     }
   };
 
+  /**
+   * Estilo container por producto: si no tiene price pinta borde rojo.
+   */
   const getContainerStyle = (item: any) => {
     if (item.price === null && url !== "request" && url !== "casa")
       return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: themeColors.background }];
     return [styles.productoContainer, { backgroundColor: themeColors.card, borderColor: themeColors.border }];
   };
 
-  const productosSinPrecio = productos.some((p) => {
-    return p.price === null;
-  });
+  const productosSinPrecio = productos.some((p) => p.price === null);
 
+  /* ============================
+     Acciones (guardar/enviar/mover)
+     ============================ */
+
+  /**
+   * ejecutarAccion
+   * Ejecuta acciones del flujo: Guardar Inicial, Enviar Pedido, Guardar Final, etc.
+   */
   const ejecutarAccion = async (accion: string) => {
     try {
       if (accion === "Guardar Inicial") {
@@ -356,42 +491,48 @@ export default function Basket({ title, url, help }: BasketProps) {
     setConfirmState({ visible: true, accion });
   };
 
+  /* ============================
+     Búsqueda y cálculo de income
+     ============================ */
+
   const filteredProductos = useMemo(() => {
     const q = normalize(query);
     if (!q) return productos;
     return productos.filter((p) => normalize(p.name).includes(q));
   }, [productos, query]);
 
+  /**
+   * income: cálculo del importe esperado en esta vista.
+   * Fórmula: suma(item.monto) - sum(casaMap[id] * item.price)
+   */
   const income = useMemo(() => {
     return productos.reduce((acc, item) => {
-      console.log(parseFloat(casaMap[item.id] ?? 0));
-      return acc + (item.monto || 0) - (parseFloat(casaMap[item.id] ?? 0) * item.price)
+      const casaQty = Number(casaMap[item.id] ?? 0);
+      const monto = Number(item.monto || 0);
+      const price = Number(item.price || 0);
+      return acc + monto - casaQty * price;
+    }, 0);
+  }, [productos, casaMap]);
+
+  const comision = useMemo(() => {
+    return productos.reduce((acc, item) => {
+      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
+      return acc + cantidadParaComision*item.comision;
     }, 0);
   }, [productos]);
-  const validateDesglose = useCallback(async (): Promise<boolean> => {
-    try {
-      const raw = await AsyncStorage.getItem("DESGLOSE_DATA");
-      if (!raw) return false;
 
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return false;
+  /* ============================
+     Validación dinámica de Desglose
+     ============================ */
 
-      // Buscar totals en varias formas posibles
-      const totals = parsed.totals ?? null;
-      if (!totals || typeof totals !== "object") return false;
-      // Condición: totalCaja >= importe (si quieres strict '>' cámbialo aquí)
-      return totals.totalCaja >= income;
-    } catch (e) {
-      // cualquier error => inválido (no permitimos que el botón se ponga verde por error)
-      console.warn("validateDesglose error:", e);
-      return false;
-    }
-  }, [income]);
-
+  // La función validateDesglose fue definida arriba (useCallback).
+  // Aquí la invocamos cada vez que cambie el income (u otros deps).
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        // validateDesglose accede a AsyncStorage y compara DESGLOSE_DATA.totals.totalCaja >= income
+        // NOTA: validateDesglose fue declarado con useCallback más arriba.
         const ok = await validateDesglose();
         if (mounted) setIsDesgloseValid(Boolean(ok));
       } catch {
@@ -401,20 +542,26 @@ export default function Basket({ title, url, help }: BasketProps) {
     return () => {
       mounted = false;
     };
-  }, [income, /* si quieres también dispararlo cuando cambie el DESGLOSE_DATA explícitamente: */ productos, casaMap]);
+  }, [income, productos, casaMap, validateDesglose]);
 
+  /* ============================
+     Handlers de navegación y guardado "Casa"
+     ============================ */
 
   const onSearchFocus = useCallback(() => {
     if (!query) return;
     setQuery("");
   }, [query]);
 
-  // --- Guardar Casa: construir array [{id, quantity}] y guardar en AsyncStorage (solo >0)
+  /**
+   * saveCasa
+   * Construye array [{id, quantity}] de productos con cantidad > 0 y lo guarda en CASA_DATA_KEY
+   * También guarda INITIAL_COUNTS_KEY y navega a final.
+   */
   const saveCasa = async () => {
     try {
-      // Reducir+filtrar en una sola pasada: solo ids con cantidad numérica > 0
       const items = productos.reduce((acc: { id: any; quantity: string }[], p) => {
-        // obtener quantity priorizando p.quantity; si está vacío, sumar p.counts
+        // obtener quantity priorizando p.quantity; si vacío, sumar p.counts
         let q = p.quantity;
         if (q === undefined || q === null || q === "") {
           if (Array.isArray(p.counts) && p.counts.length) {
@@ -424,47 +571,49 @@ export default function Basket({ title, url, help }: BasketProps) {
             q = "";
           }
         }
-        // normalizar coma -> punto y parsear
         const n = Number(String(q).replace(",", "."));
         if (!isNaN(n) && n > 0) {
-          // guardamos como string normalizado
           acc.push({ id: p.id, quantity: String(n) });
         }
         return acc;
       }, []);
 
-      // meta + items para CASA_DATA_KEY
       const meta = { savedAt: new Date().toISOString() };
       await AsyncStorage.setItem(CASA_DATA_KEY, JSON.stringify({ meta, items }));
-
-      // también guardamos las cantidades como "cantidades iniciales"
       await AsyncStorage.setItem(INITIAL_COUNTS_KEY, JSON.stringify(items));
 
       Alert.alert("Guardado", "Los datos de Casa y las cantidades iniciales se guardaron correctamente.");
-      router.push({ pathname: "/(tabs)/final" })
+      router.push({ pathname: "/(tabs)/final" });
       setIsCasaValid(true);
     } catch (e) {
       Alert.alert("Error", "No se pudo guardar Casa: " + String(e));
     }
   };
 
-  // ====== acciones: Desglose / Casa (navegación) ======
+  /* ============================
+     Navegación a Desglose / Casa
+     ============================ */
+
   const onPressDesglose = useCallback(() => {
-    router.push({ pathname: "/desgloce", params: { importe: income, comision: 10 } });
-  }, [income]);
+    // Navega a la pantalla de desgloce, pasando importe y comision (ejemplo comision=10).
+    router.push({ pathname: "/desgloce", params: { importe: income, comision } });
+  }, [income,comision]);
 
   const onPressCasa = () => {
     router.push({ pathname: "/casa" });
   };
 
-  // Colores dinámicos según validaciones
+  /* ============================
+     Flags y estilos dinámicos para botones
+     ============================ */
+
   const desgloseBg = isDesgloseValid ? themeColors.success : themeColors.warning;
   const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
 
-  // Determina si Guardar Final está habilitado (ambas validaciones true)
-  const canSaveFinal = isDesgloseValid && isCasaValid && (income>=0);
+  // Guardar final habilitado sólo si ambas validaciones son true y income >= 0
+  const canSaveFinal = isDesgloseValid && isCasaValid && income >= 0;
 
-  // true si hay al menos un producto con cantidad > 0 (usado para habilitar Guardar Casa)
+  // Existe al menos una cantidad > 0
   const hasCasaQuantities = useMemo(() => {
     return productos.some((p) => {
       let q = p.quantity;
@@ -479,11 +628,12 @@ export default function Basket({ title, url, help }: BasketProps) {
     });
   }, [productos, countTimes]);
 
-  // ====== BLOQUES UI ======
+  /* ============================
+     Componentes/Render helpers para la UI
+     ============================ */
+
   const TotalInline = ({ value }: { value: string }) => (
-    <Text style={[styles.totalTextInline, { color: themeColors.accent }]}>
-      Total: {value || "0"}
-    </Text>
+    <Text style={[styles.totalTextInline, { color: themeColors.accent }]}>Total: {value || "0"}</Text>
   );
 
   const TotalBadgeRight = ({ value }: { value: string }) => (
@@ -494,7 +644,9 @@ export default function Basket({ title, url, help }: BasketProps) {
     </View>
   );
 
-  // Conteos e inputs: se mantienen para las otras rutas (initial/final...), pero si url === 'casa' la lista será simplificada
+  /**
+   * CountsRight: fila de inputs cuando el layout no está "stacked"
+   */
   const CountsRight = (item: any, prodIndex: number) => {
     const editable = !((url === "initial" || url === "request") && hasReported);
     const counts: string[] = Array.isArray(item.counts)
@@ -543,6 +695,9 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
+  /**
+   * CountsStack: inputs apilados (cuando countTimes >= 3)
+   */
   const CountsStack = (item: any, prodIndex: number) => {
     const editable = !((url === "initial" || url === "request") && hasReported);
     const counts: string[] = Array.isArray(item.counts)
@@ -587,6 +742,9 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
+  /**
+   * Bloque con información del producto (nombre, stock, contenido neto...)
+   */
   const ProductInfoBlock = ({ item, style, children }: { item: any; style?: any; children?: React.ReactNode }) => (
     <View style={[styles.infoLeft, style]}>
       <Text style={[styles.nombre, { color: themeColors.text }]}>
@@ -605,7 +763,11 @@ export default function Basket({ title, url, help }: BasketProps) {
     </View>
   );
 
-  // RENDER ITEM adaptado: si url === 'casa' mostramos solo name + netContent y cantidad (si quieres)
+  /**
+   * renderItem: renderiza cada item de la lista según la ruta (initial/final/casa/otros).
+   * - initial/final -> multiple counts (isMulti)
+   * - casa/otros -> input simple
+   */
   const renderItem = useCallback(
     ({ item, index }: { item: any; index: number }) => {
       const isMulti = url === "initial" || url === "final";
@@ -613,6 +775,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       const showTotal = isMulti && countTimes > 1;
 
       if (!isMulti) {
+        // vista simplificada (no multiple counts)
         return (
           <View style={getContainerStyle(item)}>
             <View style={styles.row}>
@@ -646,6 +809,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       }
 
       if (!stacked) {
+        // isMulti pero no apilado: mostrar counts a la derecha
         return (
           <View style={getContainerStyle(item)}>
             <View style={styles.rowTopAligned}>
@@ -658,6 +822,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         );
       }
 
+      // stacked layout (columnas apiladas)
       return (
         <View style={getContainerStyle(item)}>
           <View style={styles.headerStackRow}>
@@ -674,6 +839,10 @@ export default function Basket({ title, url, help }: BasketProps) {
     },
     [countTimes, filteredProductos.length, hasReported, themeColors, url]
   );
+
+  /* ============================
+     Confirm dialog component
+     ============================ */
 
   const ConfirmDialog = ({
     visible,
@@ -705,6 +874,10 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
+  /* ============================
+     Render principal
+     ============================ */
+
   return (
     <>
       <KeyboardAvoidingView
@@ -727,12 +900,16 @@ export default function Basket({ title, url, help }: BasketProps) {
               </View>
             </View>
 
+            {/* Banner de advertencia si hay productos sin precio */}
             {productosSinPrecio && url !== "request" && url !== "casa" && (
               <View style={styles.warningBanner}>
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>⚠️ Los productos con el borde rojo no tienen precio asignado, el importe debe calcularse manualmente para estos. (Marcados en rojo)</Text>
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
+                  ⚠️ Los productos con el borde rojo no tienen precio asignado, el importe debe calcularse manualmente para estos. (Marcados en rojo)
+                </Text>
               </View>
             )}
 
+            {/* Row inferior del header: búsqueda + acciones */}
             <View style={styles.headerBottomRow}>
               <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
                 <MaterialIcons name="search" size={18} color="#888" />
@@ -755,11 +932,12 @@ export default function Basket({ title, url, help }: BasketProps) {
               </View>
 
               <View style={styles.bottomRight}>
+                {/* Botón actualizar: recarga productos */}
                 <TouchableOpacity onPress={() => load(countTimes)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Actualizar</Text>
                 </TouchableOpacity>
 
-                {/* Si estoy en la ruta 'casa', muestro botón Guardar Casa */}
+                {/* Guardar Casa (visible sólo en la ruta 'casa') */}
                 {url === "casa" && (
                   <TouchableOpacity
                     onPress={saveCasa}
@@ -768,12 +946,12 @@ export default function Basket({ title, url, help }: BasketProps) {
                       !hasCasaQuantities && styles.disabledButton,
                       { backgroundColor: themeColors.primary },
                     ]}
-                  // disabled={!hasCasaQuantities}
                   >
                     <Text style={[styles.actionText]}>Guardar Casa</Text>
                   </TouchableOpacity>
                 )}
 
+                {/* Botones según ruta */}
                 {url === "initial" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Guardar Inicial")}
@@ -797,6 +975,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                     </Text>
                   </TouchableOpacity>
                 )}
+
                 {url === "final" && (
                   <TouchableOpacity
                     onPress={() => handleAction("Guardar Final")}
@@ -912,6 +1091,10 @@ export default function Basket({ title, url, help }: BasketProps) {
     </>
   );
 }
+
+/* ============================
+   Estilos
+   ============================ */
 
 const styles = StyleSheet.create({
   warningBanner: {
