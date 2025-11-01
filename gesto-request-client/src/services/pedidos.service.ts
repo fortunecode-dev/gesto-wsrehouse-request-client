@@ -99,18 +99,118 @@ export const postInicial = async () => {
     throw JSON.stringify(error)
   }
 };
+
+// helpers de validación
+
+/** Comprueba si una cadena representa una fecha válida */
+function isValidDateString(s: any): boolean {
+  if (!s) return false;
+  const d = new Date(String(s));
+  return !Number.isNaN(d.getTime());
+}
+
+/** Valida la estructura mínima esperada para CASA_DATA */
+function isValidCasaObject(obj: any): boolean {
+  if (!obj || typeof obj !== "object") return false;
+
+  // meta.savedAt debe ser una fecha válida
+  const savedAt = obj?.meta?.savedAt;
+  if (!isValidDateString(savedAt)) return false;
+
+  // items debe ser un array
+  const items = Array.isArray(obj.items) ? obj.items : null;
+  if (!items) return false;
+
+  // cada item debe tener id y quantity numérico (o parseable) >= 0
+  for (const it of items) {
+    if (!it || typeof it !== "object") return false;
+    if (it.id === undefined || it.id === null) return false;
+    const q = Number(String(it.quantity ?? it.qty ?? "").replace(",", "."));
+    if (Number.isNaN(q) || q < 0) return false;
+  }
+
+  return true;
+}
+
+/** Valida la estructura mínima esperada para DESGLOSE_DATA */
+function isValidDesgloseObject(obj: any): boolean {
+  if (!obj || typeof obj !== "object") return false;
+
+  const totals = obj.totals ?? null;
+  if (!totals || typeof totals !== "object") return false;
+
+  // buscar campo de total de caja en varias claves comunes
+  const totalCajaRaw = totals.totalCaja ?? null;
+  if (totalCajaRaw === null || totalCajaRaw === undefined) return false;
+
+  const totalCaja = Number(String(totalCajaRaw).replace(",", "."));
+  if (Number.isNaN(totalCaja) || !Number.isFinite(totalCaja)) return false;
+
+  return true;
+}
+
+/**
+ * postFinal
+ * Valida CASA_DATA y DESGLOSE_DATA como objetos válidos.
+ * - Si las validaciones fallan: devuelve false.
+ * - Si son válidos: hace POST al endpoint con los objetos parseados.
+ */
 export const postFinal = async () => {
   try {
-    const areaId = await AsyncStorage.getItem('selectedLocal');
-    const userId = await AsyncStorage.getItem('selectedResponsable');
-    const casa = await AsyncStorage.getItem('CASA_DATA');
-    const desglose = await AsyncStorage.getItem('DESGLOSE_DATA');
-    const response = await axios.post(`${await API_URL()}/request/post/final`, { areaId, userId,casa,desglose });
+    // validar contexto mínimo
+    const areaId = await AsyncStorage.getItem("selectedLocal");
+    const userId = await AsyncStorage.getItem("selectedResponsable");
+
+    if (!areaId || !userId) {
+      // falta contexto imprescindible: retornar false para que el caller lo maneje
+      return false;
+    }
+
+    // leer raw desde storage
+    const casaRaw = await AsyncStorage.getItem("CASA_DATA");
+    const desgloseRaw = await AsyncStorage.getItem("DESGLOSE_DATA");
+
+    // parsear y validar ambos
+    let casaParsed: any = null;
+    let desgloseParsed: any = null;
+
+    try {
+      casaParsed = casaRaw ? JSON.parse(casaRaw) : null;
+    } catch (e) {
+      // parse error -> invalida
+      casaParsed = null;
+    }
+
+    try {
+      desgloseParsed = desgloseRaw ? JSON.parse(desgloseRaw) : null;
+    } catch (e) {
+      desgloseParsed = null;
+    }
+
+    // Validaciones estrictas: si alguna falla -> retornar false
+    if (!isValidCasaObject(casaParsed)) {
+      return false;
+    }
+    if (!isValidDesgloseObject(desgloseParsed)) {
+      return false;
+    }
+
+    // Si todo ok, enviamos el POST con los objetos ya parseados
+    const url = `${await API_URL()}/request/post/final`;
+    const response = await axios.post(url, {
+      areaId,
+      userId,
+      casa: casaParsed,
+      desglose: desgloseParsed,
+    });
+
     return response.data;
   } catch (error) {
-    throw JSON.stringify(error)
+    // conservar el comportamiento anterior: propagar el error (stringify para consistencia)
+    throw JSON.stringify(error);
   }
 };
+
 
 export const saveObservation = async (selectedResponsable, selectedLocal, observations) => {
   try {
