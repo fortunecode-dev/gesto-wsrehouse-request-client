@@ -20,7 +20,7 @@
     },
     "owner": "fortunecode",
     "android": {
-      "package": "com.fortunecode.gestorequestclient"
+      "package": "com.fortunecode.gestorequestclient" 
     }
   }
 }
