@@ -517,7 +517,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   const comision = useMemo(() => {
     return productos.reduce((acc, item) => {
       const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
-      return acc + cantidadParaComision*item.comision;
+      return acc + cantidadParaComision * item.comision;
     }, 0);
   }, [productos]);
 
@@ -597,7 +597,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   const onPressDesglose = useCallback(() => {
     // Navega a la pantalla de desgloce, pasando importe y comision (ejemplo comision=10).
     router.push({ pathname: "/desgloce", params: { importe: income, comision } });
-  }, [income,comision]);
+  }, [income, comision]);
 
   const onPressCasa = () => {
     router.push({ pathname: "/casa" });
@@ -611,7 +611,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
 
   // Guardar final habilitado sólo si ambas validaciones son true y income >= 0
-  const canSaveFinal = isDesgloseValid && isCasaValid && income >= 0;
+  const canSaveFinal = (posModeEnabled && isDesgloseValid && isCasaValid && income >= 0) || (!posModeEnabled && income >= 0);
 
   // Existe al menos una cantidad > 0
   const hasCasaQuantities = useMemo(() => {
