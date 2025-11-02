@@ -190,19 +190,17 @@ export const postFinal = async () => {
       // parse error -> invalida
       casaParsed = null;
     }
-
     try {
       desgloseParsed = desgloseRaw ? JSON.parse(desgloseRaw) : null;
     } catch (e) {
       desgloseParsed = null;
     }
-
     // Validaciones estrictas: si alguna falla -> retornar false
     if (!isValidCasaObject(casaParsed)) {
-      return false;
+      casaParsed = null
     }
     if (!isValidDesgloseObject(desgloseParsed)) {
-      return false;
+      desgloseParsed = null
     }
 
     // Si todo ok, enviamos el POST con los objetos ya parseados
@@ -216,6 +214,7 @@ export const postFinal = async () => {
 
     return response.data;
   } catch (error) {
+    console.log(error);
     // conservar el comportamiento anterior: propagar el error (stringify para consistencia)
     throw JSON.stringify(error);
   }
