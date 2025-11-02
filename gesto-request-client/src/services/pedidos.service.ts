@@ -5,17 +5,17 @@ import { router } from "expo-router";
 
 export const getProductsSaved = async (url) => {
   try {
-    if(url=="casa")
-      url="final"
+    if (url == "casa")
+      url = "final"
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
-    if (areaId == null || userId == null){
+    if (areaId == null || userId == null) {
       return router.push({ pathname: "/" })
     }
     const { data } = await axios.get(`${await API_URL()}/request/products/saved/${url}/${areaId}`)
     return data
   } catch (error) {
-    console.log("getProductsSaved error return" ,error);
+    console.log("getProductsSaved error return", error);
     AsyncStorage.removeItem("selectedLocal")
     AsyncStorage.removeItem("selectedResponsable")
     router.push({ pathname: "/" })
@@ -45,11 +45,11 @@ export const syncProducts = async (url: string, productos: any[]) => {
   try {
     const userId = await AsyncStorage.getItem('selectedResponsable');
     const areaId = await AsyncStorage.getItem('selectedLocal');
-    const parsed= productos.map(item=>({...item, quantity:item.quantity?.[item.quantity?.length-1]==="."||item.quantity?.[item.quantity?.length-1]===","?item.quantity.slice(item.quantity.length-1):item.quantity}))
+    const parsed = productos.map(item => ({ ...item, quantity: item.quantity?.[item.quantity?.length - 1] === "." || item.quantity?.[item.quantity?.length - 1] === "," ? item.quantity.slice(item.quantity.length - 1) : item.quantity }))
     const response = await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
     return response.data;
   } catch (error) {
-    console.log("syncProducts return",url,error)
+    console.log("syncProducts return", url, error)
     router.push({ pathname: "/" })
     AsyncStorage.removeItem("selectedLocal")
     AsyncStorage.removeItem("selectedResponsable")
@@ -111,42 +111,52 @@ function isValidDateString(s: any): boolean {
 
 /** Valida la estructura mínima esperada para CASA_DATA */
 function isValidCasaObject(obj: any): boolean {
-  if (!obj || typeof obj !== "object") return false;
+  try {
+    if (!obj || typeof obj !== "object") return false;
 
-  // meta.savedAt debe ser una fecha válida
-  const savedAt = obj?.meta?.savedAt;
-  if (!isValidDateString(savedAt)) return false;
+    // meta.savedAt debe ser una fecha válida
+    const savedAt = obj?.meta?.savedAt;
+    if (!isValidDateString(savedAt)) return false;
 
-  // items debe ser un array
-  const items = Array.isArray(obj.items) ? obj.items : null;
-  if (!items) return false;
+    // items debe ser un array
+    const items = Array.isArray(obj.items) ? obj.items : null;
+    if (!items) return false;
 
-  // cada item debe tener id y quantity numérico (o parseable) >= 0
-  for (const it of items) {
-    if (!it || typeof it !== "object") return false;
-    if (it.id === undefined || it.id === null) return false;
-    const q = Number(String(it.quantity ?? it.qty ?? "").replace(",", "."));
-    if (Number.isNaN(q) || q < 0) return false;
+    // cada item debe tener id y quantity numérico (o parseable) >= 0
+    for (const it of items) {
+      if (!it || typeof it !== "object") return false;
+      if (it.id === undefined || it.id === null) return false;
+      const q = Number(String(it.quantity ?? it.qty ?? "").replace(",", "."));
+      if (Number.isNaN(q) || q < 0) return false;
+    }
+
+    return true;
+  } catch {
+    return false
   }
 
-  return true;
 }
 
 /** Valida la estructura mínima esperada para DESGLOSE_DATA */
 function isValidDesgloseObject(obj: any): boolean {
-  if (!obj || typeof obj !== "object") return false;
+  try {
+    if (!obj || typeof obj !== "object") return false;
 
-  const totals = obj.totals ?? null;
-  if (!totals || typeof totals !== "object") return false;
+    const totals = obj.totals ?? null;
+    if (!totals || typeof totals !== "object") return false;
 
-  // buscar campo de total de caja en varias claves comunes
-  const totalCajaRaw = totals.totalCaja ?? null;
-  if (totalCajaRaw === null || totalCajaRaw === undefined) return false;
+    // buscar campo de total de caja en varias claves comunes
+    const totalCajaRaw = totals.totalCaja ?? null;
+    if (totalCajaRaw === null || totalCajaRaw === undefined) return false;
 
-  const totalCaja = Number(String(totalCajaRaw).replace(",", "."));
-  if (Number.isNaN(totalCaja) || !Number.isFinite(totalCaja)) return false;
+    const totalCaja = Number(String(totalCajaRaw).replace(",", "."));
+    if (Number.isNaN(totalCaja) || !Number.isFinite(totalCaja)) return false;
 
-  return true;
+    return true;
+  } catch {
+    return false
+  }
+
 }
 
 /**
