@@ -140,40 +140,6 @@ export default function Basket({ title, url, help }: BasketProps) {
      Helpers y validaciones async
      ============================ */
 
-  /**
-   * validateDesglose
-   * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
-   * Retorna true si totals.totalCaja >= income.
-   */
-  const validateDesglose = useCallback(async (): Promise<boolean> => {
-    try {
-      const raw = await AsyncStorage.getItem("DESGLOSE_DATA");
-      if (!raw) return false;
-
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return false;
-
-      // acceder a parsed.totals (esperado)
-      const totals = parsed.totals ?? null;
-      if (!totals || typeof totals !== "object") return false;
-
-      // Normalizar y parsear totalCaja
-      const totalCajaRaw = totals.totalCaja ?? totals.total ?? totals.total_caja ?? null;
-      if (totalCajaRaw === null || totalCajaRaw === undefined) return false;
-
-      const totalCaja = Number(String(totalCajaRaw).replace(",", "."));
-      if (Number.isNaN(totalCaja)) return false;
-
-      const importe = Number(income ?? 0);
-      if (Number.isNaN(importe)) return false;
-
-      // Condición: totalCaja >= importe
-      return totalCaja >= importe;
-    } catch (e) {
-      console.warn("validateDesglose error:", e);
-      return false;
-    }
-  }, /* deps */[/* income está definido más abajo; lo referenciamos vía closure en useEffect */]);
 
   /**
    * validateCasa
@@ -209,46 +175,7 @@ export default function Basket({ title, url, help }: BasketProps) {
      Efectos de carga y sincronización
      ============================ */
 
-  /**
-   * useFocusEffect: se ejecuta cuando la pantalla toma foco.
-   * - Carga configuraciones (COUNT_TIMES, POS_MODE)
-   * - Ejecuta validaciones async (desglose y casa)
-   * - Carga productos (load)
-   */
-  useFocusEffect(
-    useCallback(() => {
-      let isActive = true;
 
-      const run = async () => {
-        // Contador de slots (cuántas columnas de conteo)
-        const ctRaw = await AsyncStorage.getItem(COUNT_TIMES_KEY);
-        let ct = parseInt(ctRaw || "1", 10);
-        if (isNaN(ct) || ct < 1) ct = 1;
-        if (!isActive) return;
-        setCountTimes(ct);
-
-        // Modo POS (si está activo)
-        const posRaw = await AsyncStorage.getItem(POS_MODE_KEY);
-        if (!isActive) return;
-        setPosModeEnabled(posRaw ? JSON.parse(posRaw) : false);
-
-        // Ejecutar validaciones en paralelo
-        const [desgOk, casaOk] = await Promise.all([validateDesglose(), validateCasa()]);
-        if (!isActive) return;
-        setIsDesgloseValid(Boolean(desgOk));
-        setIsCasaValid(Boolean(casaOk));
-
-        // Cargar productos (prefill desde CASA si aplica)
-        await load(ct);
-      };
-
-      run();
-
-      return () => {
-        isActive = false;
-      };
-    }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
-  );
 
   /**
    * Cuando cambian los productos -> debounce de sincronización con backend (syncProducts)
@@ -513,7 +440,81 @@ export default function Basket({ title, url, help }: BasketProps) {
       return acc + monto - casaQty * price;
     }, 0);
   }, [productos, casaMap]);
+  /**
+   * validateDesglose
+   * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
+   * Retorna true si totals.totalCaja >= income.
+   */
+  const validateDesglose = useCallback(async (): Promise<boolean> => {
+    try {
+      const raw = await AsyncStorage.getItem("DESGLOSE_DATA");
+      if (!raw) return false;
 
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return false;
+
+      // acceder a parsed.totals (esperado)
+      const totals = parsed.totals ?? null;
+      if (!totals || typeof totals !== "object") return false;
+
+      // Normalizar y parsear totalCaja
+      const totalCajaRaw = totals.totalCaja ?? totals.total ?? totals.total_caja ?? null;
+      if (totalCajaRaw === null || totalCajaRaw === undefined) return false;
+
+      const totalCaja = Number(String(totalCajaRaw).replace(",", "."));
+      if (Number.isNaN(totalCaja)) return false;
+
+      const importe = Number(income ?? 0);
+      if (Number.isNaN(importe)) return false;
+
+      // Condición: totalCaja >= importe
+      return totalCaja >= importe;
+    } catch (e) {
+      console.warn("validateDesglose error:", e);
+      return false;
+    }
+  }, [income]);
+  /**
+   * useFocusEffect: se ejecuta cuando la pantalla toma foco.
+   * - Carga configuraciones (COUNT_TIMES, POS_MODE)
+   * - Ejecuta validaciones async (desglose y casa)
+   * - Carga productos (load)
+   */
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      const run = async () => {
+        // Contador de slots (cuántas columnas de conteo)
+        const ctRaw = await AsyncStorage.getItem(COUNT_TIMES_KEY);
+        let ct = parseInt(ctRaw || "1", 10);
+        if (isNaN(ct) || ct < 1) ct = 1;
+        if (!isActive) return;
+        setCountTimes(ct);
+
+        // Modo POS (si está activo)
+        const posRaw = await AsyncStorage.getItem(POS_MODE_KEY);
+        if (!isActive) return;
+        setPosModeEnabled(posRaw ? JSON.parse(posRaw) : false);
+
+        // Ejecutar validaciones en paralelo
+        const [desgOk, casaOk] = await Promise.all([validateDesglose(), validateCasa()]);
+        if (!isActive) return;
+        setIsDesgloseValid(Boolean(desgOk));
+        setIsCasaValid(Boolean(casaOk));
+
+        // Cargar productos (prefill desde CASA si aplica)
+        await load(ct);
+      };
+
+      run();
+
+      return () => {
+        isActive = false;
+      };
+    }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
+  );
+  
   const comision = useMemo(() => {
     return productos.reduce((acc, item) => {
       const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
