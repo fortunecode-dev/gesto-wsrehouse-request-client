@@ -451,7 +451,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         });
         const importeOk = Number(income) >= 0;
         productos.map((item) => {
-          if (item.sold <0) {
+          if (item.sold < 0) {
             console.log(`${item.name.split(" - ")[0]} tiene más unidades vendidas que las disponibles`);
           }
         })
@@ -475,6 +475,12 @@ export default function Basket({ title, url, help }: BasketProps) {
       setConfirmState({ visible: true, accion, text: `¿Desea ${accion}?` });
     }
   }, [income, productos]);
+  const comision = useMemo(() => {
+    return productos.reduce((acc, item) => {
+      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
+      return acc + cantidadParaComision * item.comision;
+    }, 0);
+  }, [productos]);
   /**
    * validateDesglose
    * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
@@ -500,15 +506,16 @@ export default function Basket({ title, url, help }: BasketProps) {
       if (Number.isNaN(totalCaja)) return false;
 
       const importe = Number(income ?? 0);
+      const ganancia = Number(comision ?? 0);
       if (Number.isNaN(importe)) return false;
 
       // Condición: totalCaja >= importe
-      return totalCaja >= importe;
+      return totalCaja >= importe - ganancia;
     } catch (e) {
       console.warn("validateDesglose error:", e);
       return false;
     }
-  }, [income]);
+  }, [income, comision]);
   /**
    * useFocusEffect: se ejecuta cuando la pantalla toma foco.
    * - Carga configuraciones (COUNT_TIMES, POS_MODE)
@@ -550,12 +557,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
   );
 
-  const comision = useMemo(() => {
-    return productos.reduce((acc, item) => {
-      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
-      return acc + cantidadParaComision * item.comision;
-    }, 0);
-  }, [productos]);
+
 
   /* ============================
      Validación dinámica de Desglose
@@ -923,7 +925,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={60}
       >
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingTop: url === "casa" ? 25 : "auto" }}>
           {/* Header */}
           <View style={[styles.header, { backgroundColor: themeColors.card }]}>
             <View style={styles.headerTopRow}>
@@ -1033,7 +1035,7 @@ export default function Basket({ title, url, help }: BasketProps) {
             {/* IMPORTANTE: Mostrar Importe y botones sólo cuando url === 'final' AND modo punto de venta activo */}
             {url === "final" && posModeEnabled && (
               <View style={[styles.importRow, { borderColor: themeColors.border, marginTop: 8 }]}>
-                <Text style={[styles.importText, { color: themeColors.text }]}>Importe: ${income}</Text>
+                <Text style={[styles.importText, { color: themeColors.text }]}>Importe (venta-ganancia): ${income - comision}</Text>
 
                 <View style={styles.buttonsRow}>
                   <TouchableOpacity
