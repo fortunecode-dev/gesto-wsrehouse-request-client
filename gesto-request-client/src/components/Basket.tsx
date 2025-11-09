@@ -97,8 +97,10 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [hasReported, setHasReported] = useState(false);
   const [casaMap, setCasaMap] = useState<Record<string, string>>({});
   const [helpVisible, setHelpVisible] = useState(false);
-  const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string }>({
+  const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string; text?: string }>({
     visible: false,
+    accion: undefined,
+    text: undefined,
   });
 
   const [query, setQuery] = useState("");
@@ -414,9 +416,8 @@ export default function Basket({ title, url, help }: BasketProps) {
     }
   };
 
-  const handleAction = (accion: string) => {
-    setConfirmState({ visible: true, accion });
-  };
+
+
 
   /* ============================
      Búsqueda y cálculo de income
@@ -440,6 +441,40 @@ export default function Basket({ title, url, help }: BasketProps) {
       return acc + monto - casaQty * price;
     }, 0);
   }, [productos, casaMap]);
+  const handleAction = useCallback(async (accion: string) => {
+    try {
+      if (accion === "Guardar Final") {
+        // comprobamos el desglose al momento (validateDesglose es async)
+        const desgOk = await validateDesglose().catch((e) => {
+          console.warn("validateDesglose error (handleAction):", e);
+          return false;
+        });
+        const importeOk = Number(income) >= 0;
+        productos.map((item) => {
+          if (item.sold <0) {
+            console.log(`${item.name.split(" - ")[0]} tiene más unidades vendidas que las disponibles`);
+          }
+        })
+        if (!desgOk || !importeOk) {
+          const reasons: string[] = [];
+          if (!desgOk) reasons.push("el desglose no es válido");
+          if (!importeOk) reasons.push("el importe es menor que 0");
+
+          const reasonText = reasons.join(" y ");
+          const text = `Advertencia: ${reasonText}. ¿Deseas continuar y ejecutar "${accion}" de todos modos?`;
+          setConfirmState({ visible: true, accion, text });
+          return;
+        }
+      }
+
+      // caso normal: abrir confirmación estándar
+      setConfirmState({ visible: true, accion, text: `¿Desea ${accion}?` });
+    } catch (e) {
+      // en caso de error inesperado, igual mostramos confirmación por seguridad
+      console.warn("handleAction unexpected error:", e);
+      setConfirmState({ visible: true, accion, text: `¿Desea ${accion}?` });
+    }
+  }, [income, productos]);
   /**
    * validateDesglose
    * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
@@ -514,7 +549,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       };
     }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
   );
-  
+
   const comision = useMemo(() => {
     return productos.reduce((acc, item) => {
       const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
@@ -584,6 +619,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       await AsyncStorage.setItem(INITIAL_COUNTS_KEY, JSON.stringify(items));
 
       Alert.alert("Guardado", "Los datos de Casa y las cantidades iniciales se guardaron correctamente.");
+      await AsyncStorage.removeItem("DESGLOSE_DATA")
       router.push({ pathname: "/(tabs)/final" });
       setIsCasaValid(true);
     } catch (e) {
@@ -612,7 +648,8 @@ export default function Basket({ title, url, help }: BasketProps) {
   const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
 
   // Guardar final habilitado sólo si ambas validaciones son true y income >= 0
-  const canSaveFinal = (posModeEnabled && isDesgloseValid && isCasaValid && income >= 0) || (!posModeEnabled && income >= 0);
+  const canSaveFinal = true
+  // const canSaveFinal = (posModeEnabled && isDesgloseValid && isCasaValid && income >= 0) || (!posModeEnabled && income >= 0);
 
   // Existe al menos una cantidad > 0
   const hasCasaQuantities = useMemo(() => {
@@ -1003,9 +1040,10 @@ export default function Basket({ title, url, help }: BasketProps) {
                     onPress={onPressDesglose}
                     style={[
                       styles.smallButton,
-                      { backgroundColor: desgloseBg },
+                      { backgroundColor: !isCasaValid ? themeColors.disabled : desgloseBg },
                       !isDesgloseValid && { opacity: 0.9 },
                     ]}
+                    disabled={!isCasaValid}
                   >
                     <Text style={styles.actionText}>Desglose</Text>
                   </TouchableOpacity>
@@ -1081,7 +1119,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       {/* Confirmación */}
       <ConfirmDialog
         visible={confirmState.visible}
-        text={`¿Desea ${confirmState.accion}?`}
+        text={confirmState.text ?? `¿Desea ${confirmState.accion}?`}
         onCancel={() => setConfirmState({ visible: false })}
         onConfirm={() => {
           const a = confirmState.accion!;
@@ -1089,6 +1127,7 @@ export default function Basket({ title, url, help }: BasketProps) {
           ejecutarAccion(a);
         }}
       />
+
     </>
   );
 }

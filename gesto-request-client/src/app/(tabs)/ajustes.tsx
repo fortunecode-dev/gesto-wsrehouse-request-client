@@ -77,6 +77,7 @@ export default function Ajustes() {
 
   const commitExchange = async (currency: string) => {
     await AsyncStorage.setItem(`EXCHANGE_${currency}`, exchangeRates[currency] ?? '');
+    await AsyncStorage.removeItem("DESGLOSE_DATA")
   };
 
   const loadSettings = async () => {

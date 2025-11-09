@@ -91,6 +91,19 @@ export default function TabLayout() {
               ),
             }}
           />
+           <Tabs.Screen
+            name="history"
+            options={{
+              title: 'Entradas',
+              tabBarIcon: ({ color, focused }) => (
+                <Feather
+                  name="arrow-right-circle"
+                  size={focused ? 28 : 26}
+                  color={color}
+                />
+              ),
+            }}
+          />
           <Tabs.Screen
             name="final"
             options={{
@@ -104,6 +117,7 @@ export default function TabLayout() {
               ),
             }}
           />
+          
           <Tabs.Screen
             name="ajustes"
             options={{

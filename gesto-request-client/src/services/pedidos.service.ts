@@ -1,6 +1,7 @@
 import { API_URL } from "@/config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { subDays } from "date-fns";
 import { router } from "expo-router";
 
 export const getProductsSaved = async (url) => {
@@ -202,7 +203,9 @@ export const postFinal = async () => {
     if (!isValidDesgloseObject(desgloseParsed)) {
       desgloseParsed = null
     }
-
+    if(desgloseParsed){
+      delete desgloseParsed.denominations._PROPINA_OVERRIDE
+    }
     // Si todo ok, enviamos el POST con los objetos ya parseados
     const url = `${await API_URL()}/request/post/final`;
     const response = await axios.post(url, {
@@ -219,7 +222,22 @@ export const postFinal = async () => {
     throw JSON.stringify(error);
   }
 };
+export const fetchMovements = async () => {
+  try {
+    const areaId = await AsyncStorage.getItem("selectedLocal");
+    if (!areaId) return [];
+    await axios.post(`${await API_URL()}/login`,{username:"admin",password:"1234"});
 
+    const filterStart = subDays(new Date().setHours(0, 0, 0, 0), 1).toISOString();
+    const filterEnd = (new Date()).toISOString();
+    const url = `${await API_URL()}/inventory-movements/outs`;
+    const response = await axios.get(url,{params:{areaId,filterStart,filterEnd}});
+    return response.data; // asumimos que la API devuelve un array de Movement
+  } catch (error) {
+    console.warn("Error fetching movements:", error);
+    throw error;
+  }
+};
 
 export const saveObservation = async (selectedResponsable, selectedLocal, observations) => {
   try {
