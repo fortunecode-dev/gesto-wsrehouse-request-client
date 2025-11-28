@@ -10,10 +10,11 @@ export const getProductsSaved = async (url) => {
       url = "final"
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
+    const toAreaId = await AsyncStorage.getItem('selectedToLocal');
     if (areaId == null || userId == null) {
       return router.push({ pathname: "/" })
     }
-    const { data } = await axios.get(`${await API_URL()}/request/products/saved/${url}/${areaId}`)
+    const { data } = await axios.get(`${await API_URL()}/request/products/saved/${url}/${areaId}`,{params:{toAreaId}})
     return data
   } catch (error) {
     console.log("getProductsSaved error return", error);
@@ -21,6 +22,40 @@ export const getProductsSaved = async (url) => {
     AsyncStorage.removeItem("selectedResponsable")
     router.push({ pathname: "/" })
     return []
+  }
+}
+
+export const getPendingTransfer = async () => {
+  try {
+    const areaId = await AsyncStorage.getItem('selectedLocal');
+    if (areaId == null) {
+      return router.push({ pathname: "/" })
+    }
+    const { data } = await axios.get(`${await API_URL()}/request/products/recibe/area2area/${areaId}`)
+    return data
+  } catch (error) {
+    console.log("getProductsSaved error return", error);
+    AsyncStorage.removeItem("selectedLocal")
+    AsyncStorage.removeItem("selectedResponsable")
+    router.push({ pathname: "/" })
+    return []
+  }
+}
+
+export const receiveTransfer = async () => {
+  try {
+   const areaId = await AsyncStorage.getItem('selectedLocal');
+    if (areaId == null) {
+      return router.push({ pathname: "/" })
+    }
+    const { data } = await axios.post(`${await API_URL()}/request/products/recibe/area2area/${areaId}`)
+    return true
+  } catch (error) {
+    console.log("getProductsSaved error return", error);
+    AsyncStorage.removeItem("selectedLocal")
+    AsyncStorage.removeItem("selectedResponsable")
+    router.push({ pathname: "/" })
+    return false
   }
 }
 
@@ -57,11 +92,10 @@ export const syncProducts = async (url: string, productos: any[]) => {
     return []
   }
 };
-export const activateRequest = async () => {
+export const activateRequest = async (productos) => {
   try {
     const areaId = await AsyncStorage.getItem('selectedLocal');
-
-    const response = await axios.post(`${await API_URL()}/request/send-to-warehouse/${areaId}`);
+    const response = await axios.post(`${await API_URL()}/request/send-to-warehouse/${areaId}`, { productos });
     return response.data;
   } catch (error) {
     throw JSON.stringify(error)
@@ -89,12 +123,12 @@ export const getActiveRequests = async () => {
     return []
   }
 };
-export const postInicial = async () => {
+export const postInicial = async (productos) => {
   try {
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
 
-    const response = await axios.post(`${await API_URL()}/request/post/initial`, { areaId, userId });
+    const response = await axios.post(`${await API_URL()}/request/post/initial`, { productos, areaId, userId });
     return response.data;
   } catch (error) {
     throw JSON.stringify(error)
@@ -166,7 +200,7 @@ function isValidDesgloseObject(obj: any): boolean {
  * - Si las validaciones fallan: devuelve false.
  * - Si son válidos: hace POST al endpoint con los objetos parseados.
  */
-export const postFinal = async () => {
+export const postFinal = async (productos) => {
   try {
     // validar contexto mínimo
     const areaId = await AsyncStorage.getItem("selectedLocal");
@@ -203,7 +237,7 @@ export const postFinal = async () => {
     if (!isValidDesgloseObject(desgloseParsed)) {
       desgloseParsed = null
     }
-    if(desgloseParsed){
+    if (desgloseParsed) {
       delete desgloseParsed.denominations._PROPINA_OVERRIDE
     }
     // Si todo ok, enviamos el POST con los objetos ya parseados
@@ -213,6 +247,35 @@ export const postFinal = async () => {
       userId,
       casa: casaParsed,
       desglose: desgloseParsed,
+      productos
+    });
+
+    return response.data;
+  } catch (error) {
+    console.log(error);
+    // conservar el comportamiento anterior: propagar el error (stringify para consistencia)
+    throw JSON.stringify(error);
+  }
+};
+export const postArea2Area = async (productos) => {
+  try {
+    // validar contexto mínimo
+    const fromAreaId = await AsyncStorage.getItem("selectedLocal");
+    const toAreaId = await AsyncStorage.getItem("selectedToLocal");
+    const userId = await AsyncStorage.getItem("selectedToResponsable");
+
+    if (!fromAreaId || !userId || !toAreaId) {
+      console.log("Falta por asignar:",!toAreaId?"El area de destino":"");
+      console.log("Falta por asignar:",!userId?"El usuario de destino":"");
+      // falta contexto imprescindible: retornar false para que el caller lo maneje
+      return false;
+    }
+    const url = `${await API_URL()}/request/post/area2area`;
+    const response = await axios.post(url, {
+      fromAreaId,
+      toAreaId,
+      userId,
+      productos
     });
 
     return response.data;
@@ -226,12 +289,12 @@ export const fetchMovements = async () => {
   try {
     const areaId = await AsyncStorage.getItem("selectedLocal");
     if (!areaId) return [];
-    await axios.post(`${await API_URL()}/login`,{username:"admin",password:"1234"});
+    await axios.post(`${await API_URL()}/login`, { username: "admin", password: "1234" });
 
     const filterStart = subDays(new Date().setHours(0, 0, 0, 0), 1).toISOString();
     const filterEnd = (new Date()).toISOString();
-    const url = `${await API_URL()}/inventory-movements/outs`;
-    const response = await axios.get(url,{params:{areaId,filterStart,filterEnd}});
+    const url = `${await API_URL()}/inventory-movements`;
+    const response = await axios.get(url, { params: { areaId, filterStart, filterEnd } });
     return response.data; // asumimos que la API devuelve un array de Movement
   } catch (error) {
     console.warn("Error fetching movements:", error);

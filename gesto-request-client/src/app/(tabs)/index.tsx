@@ -35,6 +35,7 @@ interface Employee {
 
 export default function LocalScreen() {
   const [selectedLocal, setSelectedLocal] = useState<string>('');
+  const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
   const [areas, setAreas] = useState<Area[] | null>(null);
   const [responsables, setResponsables] = useState<Employee[]>([]);
   const [selectedResponsable, setSelectedResponsable] = useState<string>('');
@@ -42,9 +43,8 @@ export default function LocalScreen() {
   const [loadingEmployees, setLoadingEmployees] = useState<boolean>(false);
   const [observation, setObservation] = useState<string>('');
   const [savingObs, setSavingObs] = useState<boolean>(false);
-  const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
-  const [responsableModalVisible, setResponsableModalVisible] = useState<boolean>(false);
   const { theme } = useAppTheme();
+  const [responsableModalVisible, setResponsableModalVisible] = useState<boolean>(false);
   const isDark = theme === "dark";
   const [helpVisible, setHelpVisible] = useState(false);
 

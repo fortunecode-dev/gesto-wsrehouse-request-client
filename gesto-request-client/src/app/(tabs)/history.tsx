@@ -11,6 +11,7 @@ import { format, parseISO } from "date-fns";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "expo-router";
 import { fetchMovements } from "@/services/pedidos.service";
+import { useAppTheme } from "@/providers/ThemeProvider";
 
 interface Movement {
   unit: any;
@@ -18,6 +19,7 @@ interface Movement {
   movementDate: string;
   itemName: string;
   quantity: number;
+  toAreaId?: string;
 }
 
 interface MovementGroup {
@@ -31,6 +33,25 @@ export default function MovementsView() {
   const [loading, setLoading] = useState(true);
   const [noLocalSelected, setNoLocalSelected] = useState(false);
 
+  const { theme } = useAppTheme();
+  const isDark = theme === "dark";
+
+  const COLORS = {
+    background: isDark ? "#111827" : "#f5f7fb",
+    card: isDark ? "#1f2937" : "#ffffff",
+    border: isDark ? "#374151" : "#e0e0e0",
+    text: isDark ? "#f9fafb" : "#1e293b",
+    textSecondary: isDark ? "#9ca3af" : "#64748b",
+    inputBg: isDark ? "#1f2937" : "#ffffff",
+    inputBorder: isDark ? "#4b5563" : "#d1d5db",
+    placeholder: isDark ? "#6b7280" : "#94a3b8",
+    accent: isDark ? "#60a5fa" : "#2563eb",
+    entrada: "#22c55e",
+    salida: "#ef4444",
+  };
+
+  const [selectedArea, setSelectedArea] = useState<string | null>(null);
+
   const loadMovements = useCallback(async () => {
     setLoading(true);
     try {
@@ -41,7 +62,9 @@ export default function MovementsView() {
         return;
       }
 
+      setSelectedArea(areaId);
       setNoLocalSelected(false);
+
       const movements = await fetchMovements();
       setData(movements);
     } catch (e) {
@@ -51,21 +74,18 @@ export default function MovementsView() {
     }
   }, []);
 
-  // Refresca cada vez que la pantalla recibe foco
   useFocusEffect(
     useCallback(() => {
       loadMovements();
     }, [loadMovements])
   );
 
-  // Filtrar movimientos por búsqueda
   const filteredData = useMemo(() => {
     return data.filter((m) =>
       m.itemName.toLowerCase().includes(search.toLowerCase())
     );
   }, [data, search]);
 
-  // Agrupar por fecha (YYYY-MM-DD)
   const groupedData: MovementGroup[] = useMemo(() => {
     const groups: Record<string, Movement[]> = {};
     filteredData.forEach((m) => {
@@ -74,22 +94,28 @@ export default function MovementsView() {
       groups[dateKey].push(m);
     });
     return Object.keys(groups)
-      .sort((a, b) => (a < b ? 1 : -1)) // fechas descendentes
+      .sort((a, b) => (a < b ? 1 : -1))
       .map((date) => ({ date, movements: groups[date] }));
   }, [filteredData]);
 
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#0b84ff" />
+      <View style={[styles.loader, { backgroundColor: COLORS.background }]}>
+        <ActivityIndicator size="large" color={COLORS.accent} />
       </View>
     );
   }
 
   if (noLocalSelected) {
     return (
-      <View style={styles.loader}>
-        <Text style={{ fontSize: 16, color: "#888", textAlign: "center" }}>
+      <View style={[styles.loader, { backgroundColor: COLORS.background }]}>
+        <Text
+          style={{
+            fontSize: 16,
+            color: COLORS.textSecondary,
+            textAlign: "center",
+          }}
+        >
           No hay un local seleccionado. Por favor selecciona un local para ver los movimientos.
         </Text>
       </View>
@@ -97,13 +123,20 @@ export default function MovementsView() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: COLORS.background }]}>
       <TextInput
         placeholder="Buscar producto..."
-        style={styles.searchInput}
+        placeholderTextColor={COLORS.placeholder}
+        style={[
+          styles.searchInput,
+          {
+            backgroundColor: COLORS.inputBg,
+            borderColor: COLORS.inputBorder,
+            color: COLORS.text,
+          },
+        ]}
         value={search}
         onChangeText={setSearch}
-        placeholderTextColor="#888"
       />
 
       <FlatList
@@ -112,27 +145,64 @@ export default function MovementsView() {
         renderItem={({ item }) => (
           <View style={styles.dateGroup}>
             <View style={styles.dateHeaderRow}>
-              <Text style={styles.dateHeader}>
+              <Text style={[styles.dateHeader, { color: COLORS.text }]}>
                 {format(parseISO(item.date), "dd MMM yyyy")}
               </Text>
-              <Text style={styles.dateHeader}>
-               Cantidad
+              <Text style={[styles.dateHeader, { color: COLORS.text }]}>
+                Cantidad
               </Text>
             </View>
 
-            {item.movements.map((m) => (
-              <View key={m.id} style={styles.movementRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemName}>{m.itemName}</Text>
-                  <Text style={styles.itemTime}>
-                    {format(parseISO(m.movementDate), "HH:mm")}
+            {item.movements.map((m) => {
+              const isEntrada = selectedArea === m.toAreaId;
+
+              return (
+                <View
+                  key={m.id}
+                  style={[
+                    styles.movementRow,
+                    {
+                      backgroundColor: COLORS.card,
+                      borderColor: COLORS.border,
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.itemName, { color: COLORS.text }]}>
+                      {m.itemName}
+                    </Text>
+
+                    <Text style={[styles.itemTime, { color: COLORS.textSecondary }]}>
+                      {format(parseISO(m.movementDate), "HH:mm")}
+                    </Text>
+                  </View>
+
+                  {/* BADGE DE ENTRADA / SALIDA */}
+                  <View
+                    style={{
+                      paddingVertical: 4,
+                      paddingHorizontal: 10,
+                      borderRadius: 8,
+                      backgroundColor: isEntrada ? COLORS.entrada : COLORS.salida,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontWeight: "800",
+                        fontSize: 14,
+                      }}
+                    >
+                      {isEntrada ? "Entrada" : "Salida"}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.quantity, { color: COLORS.accent, marginLeft: 12 }]}>
+                    {Number(m.quantity).toFixed(2)} {m?.unit?.abbreviation || ""}
                   </Text>
                 </View>
-                <Text style={styles.quantity}>
-                  {Math.round(m.quantity)} {m?.unit?.abbreviation || ""}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
       />
@@ -141,21 +211,22 @@ export default function MovementsView() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 12, backgroundColor: "#f5f7fb" },
+  container: { flex: 1, padding: 12 },
   searchInput: {
     height: 44,
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ccc",
     marginBottom: 12,
     fontSize: 16,
-    backgroundColor: "#fff",
   },
   dateGroup: { marginBottom: 16 },
-  dateHeaderRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  dateHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
   dateHeader: { fontSize: 16, fontWeight: "700" },
-  totalDateQuantity: { fontSize: 16, fontWeight: "700", color: "#0b84ff" },
   movementRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -163,13 +234,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: "#fff",
-    marginBottom: 4,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
+    marginBottom: 4,
   },
   itemName: { fontSize: 14, fontWeight: "600" },
-  itemTime: { fontSize: 12, color: "#888" },
+  itemTime: { fontSize: 12 },
   quantity: { fontSize: 16, fontWeight: "700" },
   loader: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
 });

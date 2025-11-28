@@ -22,11 +22,14 @@ import { useAppTheme } from "@/providers/ThemeProvider";
 
 import {
   activateRequest,
+  getAreas,
   getProductsSaved,
+  postArea2Area,
   postFinal,
   postInicial,
   syncProducts,
 } from "@/services/pedidos.service";
+import ModalSeleccionLocal from "./LocalResponsableModal";
 
 /* ============================
    Constantes y tipos
@@ -102,7 +105,11 @@ export default function Basket({ title, url, help }: BasketProps) {
     accion: undefined,
     text: undefined,
   });
-
+  const [selectedLocal, setSelectedLocal] = useState<string>('');
+  const [responsable, setSelectedResponsable] = useState<string>('');
+  const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
+  const [areas, setAreas] = useState<any[] | null>(null);
   const [query, setQuery] = useState("");
   const [countTimes, setCountTimes] = useState<number>(1);
   const [posModeEnabled, setPosModeEnabled] = useState<boolean>(false);
@@ -188,7 +195,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     const timer = setTimeout(async () => {
       try {
         setSyncStatus("loading");
-        if (url !== "casa") {
+        if (url !== "casa" && url !== "area2area") {
           await syncProducts(url, productos);
         }
         setSyncStatus("success");
@@ -252,7 +259,10 @@ export default function Basket({ title, url, help }: BasketProps) {
 
       // Obtener productos desde servicio
       const saved = await getProductsSaved(url);
-
+      if (url === "area2area") {
+        const locals = await getAreas();
+        setAreas(locals);
+      }
       // Construir casaMap { id: quantity }
       let casaMapLocal: Record<string, string> = {};
       try {
@@ -312,7 +322,7 @@ export default function Basket({ title, url, help }: BasketProps) {
    */
   const actualizarCantidad = (id: string, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if (url == "casa" && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
+    if ((url == "casa" || url == "area2area") && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
   };
@@ -393,28 +403,30 @@ export default function Basket({ title, url, help }: BasketProps) {
    * ejecutarAccion
    * Ejecuta acciones del flujo: Guardar Inicial, Enviar Pedido, Guardar Final, etc.
    */
-  const ejecutarAccion = async (accion: string) => {
+  const ejecutarAccion = useCallback(async (accion: string) => {
     try {
       if (accion === "Guardar Inicial") {
-        await postInicial();
+        await postInicial(productos);
         Alert.alert("Guardado", "Se guardaron las cantidades iniciales");
         setHasReported(true);
       } else if (accion === "Enviar Pedido") {
-        await activateRequest();
+        await activateRequest(productos);
         Alert.alert("Pedido enviado");
         setHasReported(true);
       } else if (accion === "Guardar Final") {
-        await postFinal();
+        await postFinal(productos);
         Alert.alert("Final guardado");
         await AsyncStorage.multiRemove(["selectedLocal", "selectedResponsable"]);
         router.push("/");
-      } else if (accion === "Mover al área") {
-        Alert.alert("Éxito", "Se movió al área");
+      } else if (accion === "Trasladar") {
+        console.log(accion);
+        await postArea2Area(productos)
+        Alert.alert("Solicitud de movimiento enviada");
       }
     } catch (e) {
       Alert.alert("Error", String(e));
     }
-  };
+  }, [productos, url]);
 
 
 
@@ -545,7 +557,8 @@ export default function Basket({ title, url, help }: BasketProps) {
         setIsDesgloseValid(Boolean(desgOk));
         setIsCasaValid(Boolean(casaOk));
 
-        // Cargar productos (prefill desde CASA si aplica)
+        // Cargar productos (prefil desde CASA si aplica)
+        if (!selectedLocal.length && url == "area2area") return
         await load(ct);
       };
 
@@ -554,9 +567,12 @@ export default function Basket({ title, url, help }: BasketProps) {
       return () => {
         isActive = false;
       };
-    }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
+    }, [url, validateDesglose, selectedLocal]) // re-run si cambia la ruta o la función validateDesglose
   );
 
+  useEffect(() => {
+    if (selectedLocal.length) load()
+  }, [selectedLocal])
 
 
   /* ============================
@@ -648,6 +664,7 @@ export default function Basket({ title, url, help }: BasketProps) {
 
   const desgloseBg = isDesgloseValid ? themeColors.success : themeColors.warning;
   const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
+  const toAreaNResponsableBg = responsable && selectedLocal ? themeColors.success : themeColors.warning;
 
   // Guardar final habilitado sólo si ambas validaciones son true y income >= 0
   const canSaveFinal = true
@@ -796,8 +813,8 @@ export default function Basket({ title, url, help }: BasketProps) {
           Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
         </Text>
       )}
-      {url === "final" && (
-        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>Consumido: {item.sold}</Text>
+      {(url === "final" || url == "area2area") && (
+        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>{url === "final" ? "Consumido" : "Máximo"}: {item.sold}</Text>
       )}
       {children}
     </View>
@@ -1029,6 +1046,19 @@ export default function Basket({ title, url, help }: BasketProps) {
                     <Text style={[styles.actionText, (!canSaveFinal) && styles.disabledText]}>Guardar Final</Text>
                   </TouchableOpacity>
                 )}
+                {url === "area2area" && (
+                  <TouchableOpacity
+                    onPress={() => handleAction("Trasladar")}
+                    style={[
+                      styles.actionButton,
+                      (!selectedLocal && !responsable) && styles.disabledButton,
+                      { backgroundColor: (!selectedLocal && !responsable) ? themeColors.disabled : themeColors.primary },
+                    ]}
+                    disabled={(!selectedLocal && !responsable)}
+                  >
+                    <Text style={[styles.actionText, ((!selectedLocal && !responsable)) && styles.disabledText]}>Trasladar</Text>
+                  </TouchableOpacity>)
+                }
               </View>
             </View>
 
@@ -1059,6 +1089,36 @@ export default function Basket({ title, url, help }: BasketProps) {
                     ]}
                   >
                     <Text style={styles.actionText}>Casa</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {url === "area2area" && (
+              <View style={[styles.importRow, { borderColor: themeColors.border, marginTop: 8 }]}>
+                {/* <Text style={[styles.importText, { color: themeColors.text }]}>Importe (venta-ganancia): ${income - comision}</Text> */}
+
+                <View style={styles.buttonsRow}>
+                  <TouchableOpacity
+                    onPress={() => setModalVisible(true)}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: toAreaNResponsableBg },
+                      !isDesgloseValid && { opacity: 0.9 },
+                    ]}
+                  // disabled={!isCasaValid}
+                  >
+                    <Text style={styles.actionText}>Seleccione el área y quien va a recibir</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    // onPress={onPressCasa}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: casaBg },
+                      !isCasaValid && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={styles.actionText}>Editar</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1117,7 +1177,44 @@ export default function Basket({ title, url, help }: BasketProps) {
           </View>
         </View>
       </Modal>
-
+      <Modal
+        visible={localModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLocalModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
+            <FlatList
+              data={areas ?? []}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={async () => {
+                    await AsyncStorage.removeItem('CAJA_DATA');
+                    await AsyncStorage.removeItem('CASA_DATA');
+                    await AsyncStorage.removeItem('INITIAL_COUNTS');
+                    await AsyncStorage.removeItem('DESGLOSE_DATA');
+                    setSelectedLocal(item.id);
+                    setLocalModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.modalItemText, { color: themeColors.text }]}>
+                    {item.local?.name} - {item.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              onPress={() => setLocalModalVisible(false)}
+              style={[styles.closeModalButton, { backgroundColor: themeColors.danger }]}
+            >
+              <Text style={styles.closeModalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       {/* Confirmación */}
       <ConfirmDialog
         visible={confirmState.visible}
@@ -1127,6 +1224,15 @@ export default function Basket({ title, url, help }: BasketProps) {
           const a = confirmState.accion!;
           setConfirmState({ visible: false });
           ejecutarAccion(a);
+        }}
+      />
+      <ModalSeleccionLocal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onConfirm={(local, responsable) => {
+          setSelectedLocal(local);
+          setSelectedResponsable(responsable);
+          setModalVisible(false);
         }}
       />
 
@@ -1139,6 +1245,30 @@ export default function Basket({ title, url, help }: BasketProps) {
    ============================ */
 
 const styles = StyleSheet.create({
+  modalContent: {
+    margin: 20,
+    borderRadius: 10,
+    padding: 15,
+    maxHeight: '70%',
+  },
+  modalItem: {
+    paddingVertical: 12,
+    borderBottomColor: '#ccc',
+    borderBottomWidth: 1,
+  },
+  modalItemText: {
+    fontSize: 16,
+  },
+  closeModalButton: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeModalButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
   warningBanner: {
     backgroundColor: "#e67e22",
     paddingVertical: 4,
