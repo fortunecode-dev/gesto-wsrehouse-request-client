@@ -327,7 +327,7 @@ export default function Caja() {
               </View>
               <View style={{ flex: 1, alignItems: "flex-end" }}>
                 <Text style={[styles.totalLabel, { color: themeColors.mutted }]}>Liquidación</Text>
-                <Text style={[styles.totalValue, { color: themeColors.primary }]}>${Number(liquidacion.toFixed(2))}</Text>
+                <Text style={[styles.totalValue, { color: themeColors.primary }]}>${Math.max(Number(sumaDenominaciones),Number(liquidacion)).toFixed(2)}</Text>
               </View>
             </View>
 
