@@ -22,11 +22,15 @@ import { useAppTheme } from "@/providers/ThemeProvider";
 
 import {
   activateRequest,
+  getAreas,
   getProductsSaved,
+  postArea2Area,
   postFinal,
   postInicial,
   syncProducts,
 } from "@/services/pedidos.service";
+import ModalSeleccionLocal from "./LocalResponsableModal";
+import { API_URL } from "@/config";
 
 /* ============================
    Constantes y tipos
@@ -97,16 +101,22 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [hasReported, setHasReported] = useState(false);
   const [casaMap, setCasaMap] = useState<Record<string, string>>({});
   const [helpVisible, setHelpVisible] = useState(false);
+  const [trying, setTrying] = useState(false);
+  const [serverOnline, setServerOnline] = useState<boolean>(true);
+  const [alertedOffline, setAlertedOffline] = useState(false);
   const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string; text?: string }>({
     visible: false,
     accion: undefined,
     text: undefined,
   });
-
+  const [selectedLocal, setSelectedLocal] = useState<string>('');
+  const [responsable, setSelectedResponsable] = useState<string>('');
+  const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
+  const [areas, setAreas] = useState<any[] | null>(null);
   const [query, setQuery] = useState("");
   const [countTimes, setCountTimes] = useState<number>(1);
   const [posModeEnabled, setPosModeEnabled] = useState<boolean>(false);
-
   // Validaciones/flags usados en la UI
   const [isDesgloseValid, setIsDesgloseValid] = useState<boolean>(false);
   const [isCasaValid, setIsCasaValid] = useState<boolean>(false);
@@ -117,7 +127,36 @@ export default function Basket({ title, url, help }: BasketProps) {
   // Refs para manejo de focus en los inputs
   const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
+  // 🔄 Health check cada 5 segundos
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        if (alertedOffline) setTrying(true)
+        const res = await fetch(`${await API_URL()}/health`, { method: "GET" });
+        const ok = res.ok;
 
+        if (!ok && !alertedOffline) {
+          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
+          setAlertedOffline(true);
+        }
+
+        if (ok && alertedOffline) {
+          setAlertedOffline(false);
+        }
+
+        setServerOnline(ok);
+      } catch (e) {
+        if (!alertedOffline) {
+          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
+          setAlertedOffline(true);
+        }
+        setServerOnline(false);
+      }
+      setTrying(false)
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [alertedOffline, serverOnline]);
   /* ----------------------------
      Theme (colores dinámicos)
      ---------------------------- */
@@ -188,14 +227,12 @@ export default function Basket({ title, url, help }: BasketProps) {
     const timer = setTimeout(async () => {
       try {
         setSyncStatus("loading");
-        if (url !== "casa") {
+        if (url !== "casa" && url !== "area2area") {
           await syncProducts(url, productos);
         }
         setSyncStatus("success");
       } catch {
         setSyncStatus("error");
-      } finally {
-        setTimeout(() => setSyncStatus("idle"), 500);
       }
     }, 500);
 
@@ -252,7 +289,10 @@ export default function Basket({ title, url, help }: BasketProps) {
 
       // Obtener productos desde servicio
       const saved = await getProductsSaved(url);
-
+      if (url === "area2area") {
+        const locals = await getAreas();
+        setAreas(locals);
+      }
       // Construir casaMap { id: quantity }
       let casaMapLocal: Record<string, string> = {};
       try {
@@ -312,7 +352,7 @@ export default function Basket({ title, url, help }: BasketProps) {
    */
   const actualizarCantidad = (id: string, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if (url == "casa" && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
+    if ((url == "casa" || url == "area2area") && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
   };
@@ -393,28 +433,30 @@ export default function Basket({ title, url, help }: BasketProps) {
    * ejecutarAccion
    * Ejecuta acciones del flujo: Guardar Inicial, Enviar Pedido, Guardar Final, etc.
    */
-  const ejecutarAccion = async (accion: string) => {
+  const ejecutarAccion = useCallback(async (accion: string) => {
     try {
       if (accion === "Guardar Inicial") {
-        await postInicial();
+        await postInicial(productos);
         Alert.alert("Guardado", "Se guardaron las cantidades iniciales");
         setHasReported(true);
       } else if (accion === "Enviar Pedido") {
-        await activateRequest();
+        await activateRequest(productos);
         Alert.alert("Pedido enviado");
         setHasReported(true);
       } else if (accion === "Guardar Final") {
-        await postFinal();
+        await postFinal(productos);
         Alert.alert("Final guardado");
         await AsyncStorage.multiRemove(["selectedLocal", "selectedResponsable"]);
         router.push("/");
-      } else if (accion === "Mover al área") {
-        Alert.alert("Éxito", "Se movió al área");
+      } else if (accion === "Trasladar") {
+        console.log(accion);
+        await postArea2Area(productos)
+        Alert.alert("Solicitud de movimiento enviada");
       }
     } catch (e) {
       Alert.alert("Error", String(e));
     }
-  };
+  }, [productos, url]);
 
 
 
@@ -451,7 +493,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         });
         const importeOk = Number(income) >= 0;
         productos.map((item) => {
-          if (item.sold <0) {
+          if (item.sold < 0) {
             console.log(`${item.name.split(" - ")[0]} tiene más unidades vendidas que las disponibles`);
           }
         })
@@ -475,6 +517,12 @@ export default function Basket({ title, url, help }: BasketProps) {
       setConfirmState({ visible: true, accion, text: `¿Desea ${accion}?` });
     }
   }, [income, productos]);
+  const comision = useMemo(() => {
+    return productos.reduce((acc, item) => {
+      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
+      return acc + cantidadParaComision * item.comision;
+    }, 0);
+  }, [productos]);
   /**
    * validateDesglose
    * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
@@ -500,15 +548,17 @@ export default function Basket({ title, url, help }: BasketProps) {
       if (Number.isNaN(totalCaja)) return false;
 
       const importe = Number(income ?? 0);
+      const ganancia = Number(comision ?? 0);
+      const transferencia = Number(parsed?.denominations?.Transferencia ?? 0);
       if (Number.isNaN(importe)) return false;
 
       // Condición: totalCaja >= importe
-      return totalCaja >= importe;
+      return totalCaja >= importe - ganancia - transferencia;
     } catch (e) {
       console.warn("validateDesglose error:", e);
       return false;
     }
-  }, [income]);
+  }, [income, comision]);
   /**
    * useFocusEffect: se ejecuta cuando la pantalla toma foco.
    * - Carga configuraciones (COUNT_TIMES, POS_MODE)
@@ -538,7 +588,8 @@ export default function Basket({ title, url, help }: BasketProps) {
         setIsDesgloseValid(Boolean(desgOk));
         setIsCasaValid(Boolean(casaOk));
 
-        // Cargar productos (prefill desde CASA si aplica)
+        // Cargar productos (prefil desde CASA si aplica)
+        if (!selectedLocal.length && url == "area2area") return
         await load(ct);
       };
 
@@ -547,15 +598,13 @@ export default function Basket({ title, url, help }: BasketProps) {
       return () => {
         isActive = false;
       };
-    }, [url, validateDesglose]) // re-run si cambia la ruta o la función validateDesglose
+    }, [url, validateDesglose, selectedLocal]) // re-run si cambia la ruta o la función validateDesglose
   );
 
-  const comision = useMemo(() => {
-    return productos.reduce((acc, item) => {
-      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
-      return acc + cantidadParaComision * item.comision;
-    }, 0);
-  }, [productos]);
+  useEffect(() => {
+    if (selectedLocal.length) load()
+  }, [selectedLocal])
+
 
   /* ============================
      Validación dinámica de Desglose
@@ -646,6 +695,7 @@ export default function Basket({ title, url, help }: BasketProps) {
 
   const desgloseBg = isDesgloseValid ? themeColors.success : themeColors.warning;
   const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
+  const toAreaNResponsableBg = responsable && selectedLocal ? themeColors.success : themeColors.warning;
 
   // Guardar final habilitado sólo si ambas validaciones son true y income >= 0
   const canSaveFinal = true
@@ -780,6 +830,24 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
+const renderSync = () => {
+    if (syncStatus === "loading")
+      return <ActivityIndicator size={25} color={themeColors.primary} />;
+
+    if (syncStatus === "success")
+      return <MaterialIcons name="check-circle" size={25} color={themeColors.success} />;
+
+    if (syncStatus === "error")
+      return <MaterialIcons name="error" size={25} color={themeColors.danger} />;
+  };
+  const renderServerStatus = () => {
+    return trying ? <ActivityIndicator size={25} color={themeColors.primary} /> : serverOnline ? (
+      <MaterialIcons name="cloud-done" size={28} color={themeColors.success} />
+    ) : (
+      <MaterialIcons name="cloud-off" size={28} color={themeColors.danger} />
+    );
+  };
+
   /**
    * Bloque con información del producto (nombre, stock, contenido neto...)
    */
@@ -794,8 +862,8 @@ export default function Basket({ title, url, help }: BasketProps) {
           Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
         </Text>
       )}
-      {url === "final" && (
-        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>Consumido: {item.sold}</Text>
+      {(url === "final" || url == "area2area") && (
+        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>{url === "final" ? "Consumido" : "Máximo"}: {item.sold}</Text>
       )}
       {children}
     </View>
@@ -923,7 +991,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={60}
       >
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingTop: url === "casa" ? 25 : "auto" }}>
           {/* Header */}
           <View style={[styles.header, { backgroundColor: themeColors.card }]}>
             <View style={styles.headerTopRow}>
@@ -931,7 +999,10 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {title}
               </Text>
               <View style={styles.topRight}>
-                <View style={styles.syncIcon}>{renderSyncStatus()}</View>
+                <View style={{ marginRight: 4 }}>
+                  {renderSync()}
+                </View>
+                {renderServerStatus()}
                 <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Ayuda</Text>
                 </TouchableOpacity>
@@ -993,7 +1064,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {url === "initial" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Guardar Inicial")}
-                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: hasReported ? themeColors.disabled : themeColors.primary }]}
                     disabled={hasReported}
                   >
                     <Text style={[styles.actionText, hasReported && styles.disabledText]}>
@@ -1005,7 +1076,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {url === "request" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Enviar Pedido")}
-                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: hasReported ? themeColors.disabled : themeColors.primary }]}
                     disabled={hasReported}
                   >
                     <Text style={[styles.actionText, hasReported && styles.disabledText]}>
@@ -1027,13 +1098,26 @@ export default function Basket({ title, url, help }: BasketProps) {
                     <Text style={[styles.actionText, (!canSaveFinal) && styles.disabledText]}>Guardar Final</Text>
                   </TouchableOpacity>
                 )}
+                {url === "area2area" && (
+                  <TouchableOpacity
+                    onPress={() => handleAction("Trasladar")}
+                    style={[
+                      styles.actionButton,
+                      (!selectedLocal && !responsable) && styles.disabledButton,
+                      { backgroundColor: (!selectedLocal && !responsable) ? themeColors.disabled : themeColors.primary },
+                    ]}
+                    disabled={(!selectedLocal && !responsable)}
+                  >
+                    <Text style={[styles.actionText, ((!selectedLocal && !responsable)) && styles.disabledText]}>Trasladar</Text>
+                  </TouchableOpacity>)
+                }
               </View>
             </View>
 
             {/* IMPORTANTE: Mostrar Importe y botones sólo cuando url === 'final' AND modo punto de venta activo */}
             {url === "final" && posModeEnabled && (
               <View style={[styles.importRow, { borderColor: themeColors.border, marginTop: 8 }]}>
-                <Text style={[styles.importText, { color: themeColors.text }]}>Importe: ${income}</Text>
+                <Text style={[styles.importText, { color: themeColors.text }]}>Importe (venta-ganancia): ${income - comision}</Text>
 
                 <View style={styles.buttonsRow}>
                   <TouchableOpacity
@@ -1057,6 +1141,36 @@ export default function Basket({ title, url, help }: BasketProps) {
                     ]}
                   >
                     <Text style={styles.actionText}>Casa</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {url === "area2area" && (
+              <View style={[styles.importRow, { borderColor: themeColors.border, marginTop: 8 }]}>
+                {/* <Text style={[styles.importText, { color: themeColors.text }]}>Importe (venta-ganancia): ${income - comision}</Text> */}
+
+                <View style={styles.buttonsRow}>
+                  <TouchableOpacity
+                    onPress={() => setModalVisible(true)}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: toAreaNResponsableBg },
+                      !isDesgloseValid && { opacity: 0.9 },
+                    ]}
+                  // disabled={!isCasaValid}
+                  >
+                    <Text style={styles.actionText}>Seleccione el área y quien va a recibir</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    // onPress={onPressCasa}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: casaBg },
+                      !isCasaValid && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={styles.actionText}>Editar</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1115,7 +1229,44 @@ export default function Basket({ title, url, help }: BasketProps) {
           </View>
         </View>
       </Modal>
-
+      <Modal
+        visible={localModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLocalModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
+            <FlatList
+              data={areas ?? []}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={async () => {
+                    await AsyncStorage.removeItem('CAJA_DATA');
+                    await AsyncStorage.removeItem('CASA_DATA');
+                    await AsyncStorage.removeItem('INITIAL_COUNTS');
+                    await AsyncStorage.removeItem('DESGLOSE_DATA');
+                    setSelectedLocal(item.id);
+                    setLocalModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.modalItemText, { color: themeColors.text }]}>
+                    {item.local?.name} - {item.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              onPress={() => setLocalModalVisible(false)}
+              style={[styles.closeModalButton, { backgroundColor: themeColors.danger }]}
+            >
+              <Text style={styles.closeModalButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       {/* Confirmación */}
       <ConfirmDialog
         visible={confirmState.visible}
@@ -1125,6 +1276,15 @@ export default function Basket({ title, url, help }: BasketProps) {
           const a = confirmState.accion!;
           setConfirmState({ visible: false });
           ejecutarAccion(a);
+        }}
+      />
+      <ModalSeleccionLocal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onConfirm={(local, responsable) => {
+          setSelectedLocal(local);
+          setSelectedResponsable(responsable);
+          setModalVisible(false);
         }}
       />
 
@@ -1137,6 +1297,30 @@ export default function Basket({ title, url, help }: BasketProps) {
    ============================ */
 
 const styles = StyleSheet.create({
+  modalContent: {
+    margin: 20,
+    borderRadius: 10,
+    padding: 15,
+    maxHeight: '70%',
+  },
+  modalItem: {
+    paddingVertical: 12,
+    borderBottomColor: '#ccc',
+    borderBottomWidth: 1,
+  },
+  modalItemText: {
+    fontSize: 16,
+  },
+  closeModalButton: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeModalButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
   warningBanner: {
     backgroundColor: "#e67e22",
     paddingVertical: 4,
