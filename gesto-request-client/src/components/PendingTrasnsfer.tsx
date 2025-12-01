@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -11,11 +10,7 @@ import {
 } from "react-native";
 import { useFocusEffect, router } from "expo-router";
 import { useAppTheme } from "@/providers/ThemeProvider";
-
-import {
-  getPendingTransfer,
-  receiveTransfer,
-} from "@/services/pedidos.service";
+import { getPendingTransfer, receiveTransfer } from "@/services/pedidos.service";
 
 const standar: Record<string, string> = {
   mass: "g",
@@ -28,7 +23,9 @@ export default function PendingTransferView() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [receiving, setReceiving] = useState<boolean>(false); // ⬅ LOADER PARA RECIBIR
+
+  const [receiving, setReceiving] = useState<boolean>(false); 
+  const [confirmVisible, setConfirmVisible] = useState<boolean>(false);
 
   const { theme } = useAppTheme();
   const isDark = theme === "dark";
@@ -48,8 +45,6 @@ export default function PendingTransferView() {
       setLoading(true);
       const data = await getPendingTransfer();
       setItems(data || []);
-    } catch (e) {
-      Alert.alert("Error", "No se pudo obtener la transferencia pendiente.");
     } finally {
       setLoading(false);
     }
@@ -61,48 +56,23 @@ export default function PendingTransferView() {
     setRefreshing(false);
   };
 
-  const handleReceive = () => {
-    Alert.alert(
-      "Confirmar",
-      "¿Deseas marcar como recibida esta transferencia?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Recibir",
-          style: "destructive",
-          onPress: async () => {
-            setReceiving(true); // ⬅ Mostrar loader
+  const handleConfirmReceive = async () => {
+    setConfirmVisible(false);
+    setReceiving(true);
 
-            try {
-              const result = await receiveTransfer(); // true / false
+    try {
+      const ok = await receiveTransfer();
 
-              setReceiving(false);
+      setReceiving(false);
 
-              if (result === true) {
-                Alert.alert(
-                  "Movimiento completado",
-                  "La transferencia fue recibida satisfactoriamente.",
-                  [
-                    {
-                      text: "Aceptar",
-                      onPress: () => router.push("/history"), // ⬅ Navega a movimientos recientes
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert(
-                  "Error",
-                  "Hubo un error procesando la transferencia."
-                );
-              }
-            } catch (e) {
-              setReceiving(false);
-              Alert.alert("Error", "No se pudo completar la acción.");
-            }
-          },
-        },
-      ]
-    );
+      if (ok === true) {
+        setTimeout(() => {
+          router.push("/history");
+        }, 300);
+      }
+    } catch (_) {
+      setReceiving(false);
+    }
   };
 
   useFocusEffect(
@@ -141,7 +111,6 @@ export default function PendingTransferView() {
           )}
         </View>
 
-        {/* BADGE */}
         <View
           style={[
             styles.badgeContainer,
@@ -173,7 +142,7 @@ export default function PendingTransferView() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={handleReceive}
+            onPress={() => setConfirmVisible(true)}
             style={[styles.actionButton, { backgroundColor: themeColors.success }]}
           >
             <Text style={styles.actionText}>Recibir</Text>
@@ -197,9 +166,41 @@ export default function PendingTransferView() {
         />
       )}
 
-      {/* ============================= */}
-      {/*      LOADER A PANTALLA COMPLETA */}
-      {/* ============================= */}
+      {/* ========================= */}
+      {/* MODAL DE CONFIRMACIÓN     */}
+      {/* ========================= */}
+      <Modal visible={confirmVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: themeColors.card }]}>
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>
+              Confirmar
+            </Text>
+            <Text style={[styles.modalText, { color: themeColors.text }]}>
+              ¿Deseas recibir esta transferencia?
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: themeColors.danger }]}
+                onPress={() => setConfirmVisible(false)}
+              >
+                <Text style={styles.modalBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: themeColors.success }]}
+                onPress={handleConfirmReceive}
+              >
+                <Text style={styles.modalBtnText}>Confirmar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================= */}
+      {/* LOADER FULLSCREEN         */}
+      {/* ========================= */}
       <Modal visible={receiving} transparent animationType="fade">
         <View style={styles.loaderOverlay}>
           <ActivityIndicator size="large" color={themeColors.primary} />
@@ -268,6 +269,45 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  /** MODAL CONFIRMACIÓN */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalBox: {
+    width: "100%",
+    maxWidth: 380,
+    padding: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  modalText: {
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "flex-end",
+  },
+  modalBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+  },
+  modalBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
 
   /** LOADER FULLSCREEN */
   loaderOverlay: {

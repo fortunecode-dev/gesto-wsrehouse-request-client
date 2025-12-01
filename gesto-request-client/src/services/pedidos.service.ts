@@ -95,7 +95,8 @@ export const syncProducts = async (url: string, productos: any[]) => {
 export const activateRequest = async (productos) => {
   try {
     const areaId = await AsyncStorage.getItem('selectedLocal');
-    const response = await axios.post(`${await API_URL()}/request/send-to-warehouse/${areaId}`, { productos });
+    const userId = await AsyncStorage.getItem('selectedResponsable');
+    const response = await axios.post(`${await API_URL()}/request/send-to-warehouse/${areaId}`, { productos,userId });
     return response.data;
   } catch (error) {
     throw JSON.stringify(error)

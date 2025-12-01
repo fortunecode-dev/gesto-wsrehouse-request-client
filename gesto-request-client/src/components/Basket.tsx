@@ -30,6 +30,7 @@ import {
   syncProducts,
 } from "@/services/pedidos.service";
 import ModalSeleccionLocal from "./LocalResponsableModal";
+import { API_URL } from "@/config";
 
 /* ============================
    Constantes y tipos
@@ -100,6 +101,9 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [hasReported, setHasReported] = useState(false);
   const [casaMap, setCasaMap] = useState<Record<string, string>>({});
   const [helpVisible, setHelpVisible] = useState(false);
+  const [trying, setTrying] = useState(false);
+  const [serverOnline, setServerOnline] = useState<boolean>(true);
+  const [alertedOffline, setAlertedOffline] = useState(false);
   const [confirmState, setConfirmState] = useState<{ visible: boolean; accion?: string; text?: string }>({
     visible: false,
     accion: undefined,
@@ -113,7 +117,6 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [query, setQuery] = useState("");
   const [countTimes, setCountTimes] = useState<number>(1);
   const [posModeEnabled, setPosModeEnabled] = useState<boolean>(false);
-
   // Validaciones/flags usados en la UI
   const [isDesgloseValid, setIsDesgloseValid] = useState<boolean>(false);
   const [isCasaValid, setIsCasaValid] = useState<boolean>(false);
@@ -124,7 +127,36 @@ export default function Basket({ title, url, help }: BasketProps) {
   // Refs para manejo de focus en los inputs
   const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
+  // 🔄 Health check cada 5 segundos
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        if (alertedOffline) setTrying(true)
+        const res = await fetch(`${await API_URL()}/health`, { method: "GET" });
+        const ok = res.ok;
 
+        if (!ok && !alertedOffline) {
+          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
+          setAlertedOffline(true);
+        }
+
+        if (ok && alertedOffline) {
+          setAlertedOffline(false);
+        }
+
+        setServerOnline(ok);
+      } catch (e) {
+        if (!alertedOffline) {
+          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
+          setAlertedOffline(true);
+        }
+        setServerOnline(false);
+      }
+      setTrying(false)
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [alertedOffline, serverOnline]);
   /* ----------------------------
      Theme (colores dinámicos)
      ---------------------------- */
@@ -201,8 +233,6 @@ export default function Basket({ title, url, help }: BasketProps) {
         setSyncStatus("success");
       } catch {
         setSyncStatus("error");
-      } finally {
-        setTimeout(() => setSyncStatus("idle"), 500);
       }
     }, 500);
 
@@ -519,10 +549,11 @@ export default function Basket({ title, url, help }: BasketProps) {
 
       const importe = Number(income ?? 0);
       const ganancia = Number(comision ?? 0);
+      const transferencia = Number(parsed?.denominations?.Transferencia ?? 0);
       if (Number.isNaN(importe)) return false;
 
       // Condición: totalCaja >= importe
-      return totalCaja >= importe - ganancia;
+      return totalCaja >= importe - ganancia - transferencia;
     } catch (e) {
       console.warn("validateDesglose error:", e);
       return false;
@@ -799,6 +830,24 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
+const renderSync = () => {
+    if (syncStatus === "loading")
+      return <ActivityIndicator size={25} color={themeColors.primary} />;
+
+    if (syncStatus === "success")
+      return <MaterialIcons name="check-circle" size={25} color={themeColors.success} />;
+
+    if (syncStatus === "error")
+      return <MaterialIcons name="error" size={25} color={themeColors.danger} />;
+  };
+  const renderServerStatus = () => {
+    return trying ? <ActivityIndicator size={25} color={themeColors.primary} /> : serverOnline ? (
+      <MaterialIcons name="cloud-done" size={28} color={themeColors.success} />
+    ) : (
+      <MaterialIcons name="cloud-off" size={28} color={themeColors.danger} />
+    );
+  };
+
   /**
    * Bloque con información del producto (nombre, stock, contenido neto...)
    */
@@ -950,7 +999,10 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {title}
               </Text>
               <View style={styles.topRight}>
-                <View style={styles.syncIcon}>{renderSyncStatus()}</View>
+                <View style={{ marginRight: 4 }}>
+                  {renderSync()}
+                </View>
+                {renderServerStatus()}
                 <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.actionButton, { backgroundColor: themeColors.primary }]}>
                   <Text style={styles.actionText}>Ayuda</Text>
                 </TouchableOpacity>
@@ -1012,7 +1064,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {url === "initial" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Guardar Inicial")}
-                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: hasReported ? themeColors.disabled : themeColors.primary }]}
                     disabled={hasReported}
                   >
                     <Text style={[styles.actionText, hasReported && styles.disabledText]}>
@@ -1024,7 +1076,7 @@ export default function Basket({ title, url, help }: BasketProps) {
                 {url === "request" && (
                   <TouchableOpacity
                     onPress={() => !hasReported && handleAction("Enviar Pedido")}
-                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: themeColors.primary }]}
+                    style={[styles.actionButton, hasReported && styles.disabledButton, { backgroundColor: hasReported ? themeColors.disabled : themeColors.primary }]}
                     disabled={hasReported}
                   >
                     <Text style={[styles.actionText, hasReported && styles.disabledText]}>
