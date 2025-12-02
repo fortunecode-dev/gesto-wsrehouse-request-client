@@ -15,10 +15,10 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "742d9031-6c72-462a-9c6b-76fc296b26bc"
+        "projectId": "78a6910d-c05a-4717-b9e2-983dc9ca02b7"
       }
     },
-    "owner": "luisra990801",
+    "owner": "fortunecode",
     "android": {
       "package": "com.fortunecode.gestorequestclient" 
     }
