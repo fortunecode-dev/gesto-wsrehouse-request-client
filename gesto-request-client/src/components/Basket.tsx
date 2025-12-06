@@ -150,7 +150,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       if (!mounted || !healthURL) return;
 
       // 🔵 Cada ciclo empieza reintentando
-      setTrying(true);
+      if (offlineRef.current) setTrying(true);
 
       try {
         const res = await fetch(healthURL);
@@ -349,6 +349,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       const saved = await getProductsSaved(url);
       if (url === "area2area") {
         const locals = await getAreas();
+        if (!locals) return router.push({ pathname: "/" });
         setAreas(locals);
       }
       // Construir casaMap { id: quantity }
@@ -636,7 +637,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         setIsCasaValid(Boolean(casaOk));
 
         // Cargar productos (prefil desde CASA si aplica)
-        if (!selectedLocal.length && url == "area2area") return
+        if (!selectedLocal?.length && url == "area2area") return
         await load(ct);
       };
 
@@ -649,7 +650,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   );
 
   useEffect(() => {
-    if (selectedLocal.length) load()
+    if (selectedLocal?.length) load()
   }, [selectedLocal])
 
 
@@ -1276,44 +1277,6 @@ export default function Basket({ title, url, help }: BasketProps) {
             />
             <TouchableOpacity onPress={() => setHelpVisible(false)} style={[styles.actionButton, { backgroundColor: themeColors.danger, marginTop: 10 }]}>
               <Text style={styles.actionText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={localModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setLocalModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
-            <FlatList
-              data={areas ?? []}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={async () => {
-                    await AsyncStorage.removeItem('CAJA_DATA');
-                    await AsyncStorage.removeItem('CASA_DATA');
-                    await AsyncStorage.removeItem('INITIAL_COUNTS');
-                    await AsyncStorage.removeItem('DESGLOSE_DATA');
-                    setSelectedLocal(item.id);
-                    setLocalModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.modalItemText, { color: themeColors.text }]}>
-                    {item.local?.name} - {item.name}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              onPress={() => setLocalModalVisible(false)}
-              style={[styles.closeModalButton, { backgroundColor: themeColors.danger }]}
-            >
-              <Text style={styles.closeModalButtonText}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>

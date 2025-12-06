@@ -26,9 +26,9 @@ export default function ModalSeleccionLocal({
   visible,
   onClose,
   onConfirm,
-  actualArea
+  // actualArea
 }: {
-  actualArea: string,
+  // actualArea: string,
   visible: boolean;
   onClose: () => void;
   onConfirm: (localId: string, responsableId: string) => void;
@@ -93,7 +93,7 @@ export default function ModalSeleccionLocal({
     onConfirm(selectedArea, selectedToResponsable);
   };
   const sortedAreas = useMemo(() => {
-    console.log(actualArea);
+    // console.log(actualArea);
     return [...(areas ?? [])].sort((a, b) => {
       const localA = a.local?.name?.toLowerCase() ?? "";
       const localB = b.local?.name?.toLowerCase() ?? "";
@@ -109,8 +109,11 @@ export default function ModalSeleccionLocal({
       if (areaA > areaB) return 1;
 
       return 0;
-    }).filter(item => item.id != actualArea)
-  }, [areas, actualArea]);
+    })
+    // .filter(item => item.id != actualArea)
+  }, [areas,
+    //  actualArea
+    ]);
 
   return (
     <Modal visible={visible} transparent animationType="fade">
