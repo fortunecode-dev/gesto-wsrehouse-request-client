@@ -477,7 +477,6 @@ export default function Basket({ title, url, help }: BasketProps) {
     if ((url == "casa" || url == "area2area") && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
-    clear()
   };
 
   /**
@@ -490,7 +489,6 @@ export default function Basket({ title, url, help }: BasketProps) {
     let max = parseFloat(maxQuantity)
     if (url == "casa") max -= parseFloat(deudaMap[id] ?? "0")
     if (url == "deuda") max -= parseFloat(casaMap[id] ?? "0")
-
     if (url == "casa" && maxQuantity != null && max < parseFloat(nuevaCantidad)) return;
     setProductos((prev) =>
       prev.map((p) => {
@@ -501,7 +499,6 @@ export default function Basket({ title, url, help }: BasketProps) {
         return { ...p, counts, quantity: total ? String(total) : "" };
       })
     );
-    clear()
   }, [casaMap, deudaMap]);
 
   /**
@@ -790,7 +787,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       Alert.alert("Guardado", "Los datos de Casa y las cantidades iniciales se guardaron correctamente.");
       await AsyncStorage.removeItem("DESGLOSE_DATA")
       router.push({ pathname: "/(tabs)/final" });
-      setIsCasaValid(true);
+      // setIsCasaValid(true);
     } catch (e) {
       Alert.alert("Error", "No se pudo guardar Casa: " + String(e));
     }
