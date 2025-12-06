@@ -2,7 +2,7 @@ import React from "react";
 import Basket from "@/components/Basket";
 
 export default function InicioScreen() {
-  return <Basket title={"Cantidades iniciales"} url={"initial"} help={{
+  return <Basket title={"Inicios"} url={"initial"} help={{
     title: "¿Cómo llenar los campos?",
     image: require("../../../assets/inicio.png"),
     content: [

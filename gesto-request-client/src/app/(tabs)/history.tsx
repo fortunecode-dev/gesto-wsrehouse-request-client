@@ -32,6 +32,7 @@ export default function MovementsView() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [noLocalSelected, setNoLocalSelected] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const { theme } = useAppTheme();
   const isDark = theme === "dark";
@@ -49,6 +50,7 @@ export default function MovementsView() {
     entrada: "#22c55e",
     salida: "#ef4444",
   };
+
 
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
 
@@ -80,6 +82,11 @@ export default function MovementsView() {
     }, [loadMovements])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadMovements();
+    setRefreshing(false);
+  }, [loadMovements]);
   const filteredData = useMemo(() => {
     return data.filter((m) =>
       m.itemName.toLowerCase().includes(search.toLowerCase())
@@ -142,6 +149,9 @@ export default function MovementsView() {
       <FlatList
         data={groupedData}
         keyExtractor={(item) => item.date}
+        refreshing={refreshing}     // ⭐ Habilita el loader de refresco
+        onRefresh={onRefresh}       // ⭐ Acción cuando se desliza hacia abajo
+
         renderItem={({ item }) => (
           <View style={styles.dateGroup}>
             <View style={styles.dateHeaderRow}>
@@ -177,7 +187,6 @@ export default function MovementsView() {
                     </Text>
                   </View>
 
-                  {/* BADGE DE ENTRADA / SALIDA */}
                   <View
                     style={{
                       paddingVertical: 4,
@@ -197,7 +206,12 @@ export default function MovementsView() {
                     </Text>
                   </View>
 
-                  <Text style={[styles.quantity, { color: COLORS.accent, marginLeft: 12 }]}>
+                  <Text
+                    style={[
+                      styles.quantity,
+                      { color: COLORS.accent, marginLeft: 12 },
+                    ]}
+                  >
                     {Number(m.quantity).toFixed(2)} {m?.unit?.abbreviation || ""}
                   </Text>
                 </View>
@@ -206,6 +220,7 @@ export default function MovementsView() {
           </View>
         )}
       />
+
     </View>
   );
 }

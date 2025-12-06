@@ -35,6 +35,7 @@ interface Employee {
 
 export default function LocalScreen() {
   const [selectedLocal, setSelectedLocal] = useState<string>('');
+  const [selectedLocalName, setSelectedLocalName] = useState<string>('');
   const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
   const [areas, setAreas] = useState<Area[] | null>(null);
   const [responsables, setResponsables] = useState<Employee[]>([]);
@@ -85,7 +86,6 @@ export default function LocalScreen() {
         }
       ]
   }
-  const selectedLocalName = areas?.find(a => a.id === selectedLocal)?.name;
   const selectedResponsableName = responsables?.find(r => r.id === selectedResponsable)?.username;
 
   const showAlert = (title: string, message: any) => {
@@ -95,28 +95,43 @@ export default function LocalScreen() {
       Alert.alert(title, String(message));
     }
   };
+  const sortedAreas = [...(areas ?? [])].sort((a, b) => {
+    const localA = a.local?.name?.toLowerCase() ?? "";
+    const localB = b.local?.name?.toLowerCase() ?? "";
 
+    if (localA > localB) return -1;
+    if (localA < localB) return 1;
+
+    // Si los locales son iguales → ordenar por nombre del área
+    const areaA = a.name?.toLowerCase() ?? "";
+    const areaB = b.name?.toLowerCase() ?? "";
+
+    if (areaA < areaB) return -1;
+    if (areaA > areaB) return 1;
+
+    return 0;
+  });
+  const loadInitialData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const locals = await getAreas();
+      setAreas(locals);
+      const savedLocal = await AsyncStorage.getItem('selectedLocal') ?? "";
+      const savedResponsable = await AsyncStorage.getItem('selectedResponsable') ?? "";
+      if (savedLocal) {
+        const employees = await getEmployes(savedLocal);
+        setResponsables(employees);
+      }
+      setSelectedResponsable(savedResponsable);
+      setSelectedLocal(savedLocal);
+    } catch (error) {
+      showAlert("Error cargando los datos:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
   useFocusEffect(
     useCallback(() => {
-      const loadInitialData = async () => {
-        try {
-          setLoading(true);
-          const locals = await getAreas();
-          setAreas(locals);
-          const savedLocal = await AsyncStorage.getItem('selectedLocal') ?? "";
-          const savedResponsable = await AsyncStorage.getItem('selectedResponsable') ?? "";
-          if (savedLocal) {
-            const employees = await getEmployes(savedLocal);
-            setResponsables(employees);
-          }
-          setSelectedResponsable(savedResponsable);
-          setSelectedLocal(savedLocal);
-        } catch (error) {
-          showAlert("Error cargando los datos:", error);
-        } finally {
-          setLoading(false);
-        }
-      };
       loadInitialData();
     }, [])
   );
@@ -125,6 +140,7 @@ export default function LocalScreen() {
     const loadEmployees = async () => {
       if (!selectedLocal) {
         await AsyncStorage.removeItem('selectedLocal');
+        await AsyncStorage.removeItem('LOCAL_DENOMINATION');
         await AsyncStorage.removeItem('selectedResponsable');
         return setResponsables([]);
       }
@@ -133,6 +149,8 @@ export default function LocalScreen() {
         await AsyncStorage.removeItem('selectedResponsable');
         await AsyncStorage.setItem('selectedLocal', selectedLocal);
         const employees = await getEmployes(selectedLocal);
+        const local = await AsyncStorage.getItem('LOCAL_DENOMINATION');
+        setSelectedLocalName(local)
         setResponsables([...employees]);
         setSelectedResponsable('');
         setObservation('');
@@ -168,12 +186,17 @@ export default function LocalScreen() {
     try {
       setSavingObs(true);
       await saveObservation(selectedResponsable, selectedLocal, observation);
+
+      // Opcional: feedback
+      Alert.alert("Éxito", "La observación ha sido guardada correctamente.");
+
     } catch (e) {
       showAlert("Error guardando la observación", e);
     } finally {
       setSavingObs(false);
     }
   };
+
 
   if (loading) {
     return (
@@ -199,13 +222,22 @@ export default function LocalScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-      ) : (
-        <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
-          No se pudieron cargar las áreas, revise su conexión
-        </Text>
+      ) : (<View><Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
+        La aplicación no pudo cargar, revise su conexión e inténtenlo de nuevo.
+      </Text> <TouchableOpacity
+        onPress={loadInitialData}
+               style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
+
+      >
+          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+            Intentar conectarse
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       )}
 
-      {selectedLocal && (
+      {(selectedLocal && areas?.length) && (
         <>
           <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
             Responsable
@@ -225,7 +257,7 @@ export default function LocalScreen() {
             </TouchableOpacity>
           )}
 
-          {selectedResponsable && (
+          {(selectedResponsable && areas?.length) && (
             <>
               <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>
                 Observación
@@ -243,20 +275,26 @@ export default function LocalScreen() {
               </View>
               <TouchableOpacity
                 onPress={handleSaveObservation}
-                style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
+                style={[
+                  styles.saveButton,
+                  { backgroundColor: themeColors.primary, opacity: savingObs ? 0.7 : 1 },
+                ]}
                 disabled={savingObs}
               >
-                <Text style={styles.saveButtonText}>
-                  {savingObs ? 'Guardando...' : 'Guardar Observación'}
-                </Text>
+                {savingObs ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Guardar Observación</Text>
+                )}
               </TouchableOpacity>
+
 
             </>
           )}
 
         </>
       )}
-      <TouchableOpacity
+      {areas && <TouchableOpacity
         onPress={() => setHelpVisible(true)}
         style={[styles.saveButton, { backgroundColor: themeColors.primary }]}
         disabled={savingObs}
@@ -264,7 +302,7 @@ export default function LocalScreen() {
         <Text style={styles.saveButtonText}>
           Ayuda
         </Text>
-      </TouchableOpacity>
+      </TouchableOpacity>}
       {/* MODALES */}
       <Modal
         visible={responsableModalVisible}
@@ -332,7 +370,7 @@ export default function LocalScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
             <FlatList
-              data={areas ?? []}
+              data={sortedAreas}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -342,6 +380,7 @@ export default function LocalScreen() {
                     await AsyncStorage.removeItem('CASA_DATA');
                     await AsyncStorage.removeItem('INITIAL_COUNTS');
                     await AsyncStorage.removeItem('DESGLOSE_DATA');
+                    await AsyncStorage.setItem('LOCAL_DENOMINATION', `${item.local?.name} - ${item.name}`);
                     setSelectedLocal(item.id);
                     setLocalModalVisible(false);
                   }}

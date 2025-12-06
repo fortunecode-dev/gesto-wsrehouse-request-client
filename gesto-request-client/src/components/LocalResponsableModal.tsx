@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal,
   View,
@@ -26,7 +26,9 @@ export default function ModalSeleccionLocal({
   visible,
   onClose,
   onConfirm,
+  actualArea
 }: {
+  actualArea: string,
   visible: boolean;
   onClose: () => void;
   onConfirm: (localId: string, responsableId: string) => void;
@@ -90,6 +92,25 @@ export default function ModalSeleccionLocal({
     await AsyncStorage.setItem("selectedToResponsable", selectedToResponsable);
     onConfirm(selectedArea, selectedToResponsable);
   };
+  const sortedAreas = useMemo(() => {
+    console.log(actualArea);
+    return [...(areas ?? [])].sort((a, b) => {
+      const localA = a.local?.name?.toLowerCase() ?? "";
+      const localB = b.local?.name?.toLowerCase() ?? "";
+
+      if (localA > localB) return -1;
+      if (localA < localB) return 1;
+
+      // Si los locales son iguales → ordenar por nombre del área
+      const areaA = a.name?.toLowerCase() ?? "";
+      const areaB = b.name?.toLowerCase() ?? "";
+
+      if (areaA < areaB) return -1;
+      if (areaA > areaB) return 1;
+
+      return 0;
+    }).filter(item => item.id != actualArea)
+  }, [areas, actualArea]);
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -104,7 +125,7 @@ export default function ModalSeleccionLocal({
           ) : (
             <FlatList
               style={styles.list}
-              data={areas}
+              data={sortedAreas}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -138,7 +159,7 @@ export default function ModalSeleccionLocal({
                       style={[
                         styles.item,
                         selectedToResponsable === item.id &&
-                          styles.selectedItem,
+                        styles.selectedItem,
                       ]}
                       onPress={() => setSelectedToResponsable(item.id)}
                     >
@@ -160,7 +181,7 @@ export default function ModalSeleccionLocal({
               style={[
                 styles.accept,
                 !(selectedArea && selectedToResponsable) &&
-                  { opacity: 0.5 },
+                { opacity: 0.5 },
               ]}
               disabled={!(selectedArea && selectedToResponsable)}
               onPress={handleConfirm}

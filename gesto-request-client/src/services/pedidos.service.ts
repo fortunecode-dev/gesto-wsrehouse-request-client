@@ -18,10 +18,7 @@ export const getProductsSaved = async (url) => {
     return data
   } catch (error) {
     console.log("getProductsSaved error return", error);
-    AsyncStorage.removeItem("selectedLocal")
-    AsyncStorage.removeItem("selectedResponsable")
-    router.push({ pathname: "/" })
-    return []
+    return false
   }
 }
 
@@ -81,15 +78,12 @@ export const syncProducts = async (url: string, productos: any[]) => {
   try {
     const userId = await AsyncStorage.getItem('selectedResponsable');
     const areaId = await AsyncStorage.getItem('selectedLocal');
-    const parsed = productos.map(item => ({ ...item, quantity: item.quantity?.[item.quantity?.length - 1] === "." || item.quantity?.[item.quantity?.length - 1] === "," ? item.quantity.slice(item.quantity.length - 1) : item.quantity }))
-    const response = await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
-    return response.data;
+    await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
+    return true;
   } catch (error) {
     console.log("syncProducts return", url, error)
-    router.push({ pathname: "/" })
-    AsyncStorage.removeItem("selectedLocal")
-    AsyncStorage.removeItem("selectedResponsable")
-    return []
+
+    return false
   }
 };
 export const activateRequest = async (productos) => {

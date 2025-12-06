@@ -97,6 +97,7 @@ export default function Basket({ title, url, help }: BasketProps) {
      Estado local
      ---------------------------- */
   const [productos, setProductos] = useState<any[]>([]);
+  const [areaName, setAreaName] = useState<string>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [hasReported, setHasReported] = useState(false);
   const [casaMap, setCasaMap] = useState<Record<string, string>>({});
@@ -127,36 +128,87 @@ export default function Basket({ title, url, help }: BasketProps) {
   // Refs para manejo de focus en los inputs
   const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
+  const productosRef = useRef(productos);
+
+
   // 🔄 Health check cada 5 segundos
   useEffect(() => {
+    let mounted = true;
+    let healthURL = "";
+
+    const offlineRef = { current: false };
+    const syncingRef = { current: false };
+
+    // --- Mantener productos actualizados en el ref ---
+    productosRef.current = productos;
+
+    (async () => {
+      healthURL = `${await API_URL()}/health`;
+    })();
+
     const interval = setInterval(async () => {
+      if (!mounted || !healthURL) return;
+
+      // 🔵 Cada ciclo empieza reintentando
+      setTrying(true);
+
       try {
-        if (alertedOffline) setTrying(true)
-        const res = await fetch(`${await API_URL()}/health`, { method: "GET" });
+        const res = await fetch(healthURL);
         const ok = res.ok;
 
-        if (!ok && !alertedOffline) {
-          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
-          setAlertedOffline(true);
+        // --- RESTABLECIDA ---
+        if (ok) {
+          if (offlineRef.current) {
+            offlineRef.current = false;
+            setAlertedOffline(false);
+            setServerOnline(true);
+
+            // Auto-sync con productos actuales
+            if (!syncingRef.current) {
+              syncingRef.current = true;
+              try {
+                await syncProducts(url, productosRef.current);
+                setSyncStatus("success");
+              } catch {
+                setSyncStatus("error");
+              } finally {
+                syncingRef.current = false;
+              }
+            }
+          }
+
+          setTrying(false);
+          return;
         }
 
-        if (ok && alertedOffline) {
-          setAlertedOffline(false);
-        }
-
-        setServerOnline(ok);
-      } catch (e) {
-        if (!alertedOffline) {
-          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
+        // --- SIN CONEXIÓN ---
+        if (!offlineRef.current) {
+          offlineRef.current = true;
           setAlertedOffline(true);
+          setServerOnline(false);
+          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
         }
-        setServerOnline(false);
+      } catch {
+        if (!offlineRef.current) {
+          offlineRef.current = true;
+          setAlertedOffline(true);
+          setServerOnline(false);
+          Alert.alert("Conexión perdida", "No hay conexión con el servidor.");
+        }
       }
-      setTrying(false)
+
+      // 🔴 FIN DEL INTENTO
+      setTrying(false);
+
     }, 5000);
 
-    return () => clearInterval(interval);
-  }, [alertedOffline, serverOnline]);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []); // <-- SIN dependencias
+
   /* ----------------------------
      Theme (colores dinámicos)
      ---------------------------- */
@@ -224,13 +276,18 @@ export default function Basket({ title, url, help }: BasketProps) {
    */
   useEffect(() => {
     if (!productos?.length) return;
+    productosRef.current = productos;
     const timer = setTimeout(async () => {
       try {
         setSyncStatus("loading");
         if (url !== "casa" && url !== "area2area") {
-          await syncProducts(url, productos);
+          const syncSuccessful = await syncProducts(url, productos);
+          if (syncSuccessful) {
+            setSyncStatus("success");
+          } else {
+            setSyncStatus("error");
+          }
         }
-        setSyncStatus("success");
       } catch {
         setSyncStatus("error");
       }
@@ -281,6 +338,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     try {
       // Validación mínima: selectedLocal y selectedResponsable deben existir
       const areaId = await AsyncStorage.getItem("selectedLocal");
+      const areaName = await AsyncStorage.getItem("LOCAL_DENOMINATION");
       const userId = await AsyncStorage.getItem("selectedResponsable");
       if (!areaId || !userId) {
         setLoadingItems(false);
@@ -331,6 +389,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       });
 
       const finalShaped = ensureCountsShape(shaped, ctForShape ?? countTimes);
+      setAreaName(areaName)
       setProductos(finalShaped);
       setHasReported(saved.some((p: any) => !!p.reported));
       setCasaMap(casaMapLocal);
@@ -400,27 +459,15 @@ export default function Basket({ title, url, help }: BasketProps) {
      UI helpers
      ============================ */
 
-  /** Muestra estado de sincronización (loader / check / error) */
-  const renderSyncStatus = () => {
-    switch (syncStatus) {
-      case "loading":
-        return <ActivityIndicator size="small" color={themeColors.primary} />;
-      case "success":
-        return <MaterialIcons name="check" size={18} color={themeColors.success} />;
-      case "error":
-        return <MaterialIcons name="error" size={18} color={themeColors.danger} />;
-      default:
-        return null;
-    }
-  };
+
 
   /**
    * Estilo container por producto: si no tiene price pinta borde rojo.
    */
   const getContainerStyle = (item: any) => {
     if (item.price === null && url !== "request" && url !== "casa")
-      return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: themeColors.background }];
-    return [styles.productoContainer, { backgroundColor: themeColors.card, borderColor: themeColors.border }];
+      return [styles.productoContainer, { borderColor: themeColors.danger, backgroundColor: themeColors.background, borderLeftWidth: item.inUse ? 5 : undefined, }];
+    return [styles.productoContainer, { backgroundColor: themeColors.card, borderColor: themeColors.border, borderLeftWidth: item.inUse ? 5 : undefined, borderLeftColor: item.inUse ? themeColors.success : undefined }];
   };
 
   const productosSinPrecio = productos.some((p) => p.price === null);
@@ -769,10 +816,10 @@ export default function Basket({ title, url, help }: BasketProps) {
                 keyboardType="decimal-pad"
                 inputMode="decimal"
                 editable={editable}
-                value={val ?? ""}
+                value={Number(val) === 0 ? "" : val?.toString()}
+                placeholder="0"
                 onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text, item.sold)}
                 onSubmitEditing={() => handleSubmitMulti(prodIndex, cIdx, filteredProductos.length)}
-                placeholder="0"
                 placeholderTextColor="#888"
                 returnKeyType="next"
               />
@@ -817,10 +864,10 @@ export default function Basket({ title, url, help }: BasketProps) {
               keyboardType="decimal-pad"
               inputMode="decimal"
               editable={editable}
-              value={val ?? ""}
+              value={Number(val) === 0 ? "" : val?.toString()}
+              placeholder="0"
               onChangeText={(text) => actualizarCantidadParcial(item.id, cIdx, text, item.sold)}
               onSubmitEditing={() => handleSubmitMulti(prodIndex, cIdx, filteredProductos.length)}
-              placeholder="0"
               placeholderTextColor="#888"
               returnKeyType="next"
             />
@@ -830,7 +877,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     );
   };
 
-const renderSync = () => {
+  const renderSync = () => {
     if (syncStatus === "loading")
       return <ActivityIndicator size={25} color={themeColors.primary} />;
 
@@ -862,6 +909,9 @@ const renderSync = () => {
           Contenido neto: {item.netContent} {standar[item.netContentUnitOfMeasureId]}
         </Text>
       )}
+      {(url === "request") && (
+        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>Disponible en área: {item.disponible}</Text>
+      )}
       {(url === "final" || url == "area2area") && (
         <Text style={{ color: themeColors.text, fontWeight: "bold" }}>{url === "final" ? "Consumido" : "Máximo"}: {item.sold}</Text>
       )}
@@ -879,7 +929,7 @@ const renderSync = () => {
       const isMulti = url === "initial" || url === "final";
       const stacked = isMulti && countTimes >= 3;
       const showTotal = isMulti && countTimes > 1;
-
+      const inUse = item.inUse
       if (!isMulti) {
         // vista simplificada (no multiple counts)
         return (
@@ -901,10 +951,11 @@ const renderSync = () => {
                 keyboardType="decimal-pad"
                 inputMode="decimal"
                 editable={!((url === "initial" || url === "request") && hasReported)}
-                value={item.quantity?.toString() || ""}
+                value={Number(item.quantity) === 0 ? "" : item.quantity?.toString()}
+                placeholder="0"
+
                 onChangeText={(text) => actualizarCantidad(item.id, text, item.sold)}
                 onSubmitEditing={() => handleSubmit(index, filteredProductos.length)}
-                placeholder="Cantidad"
                 blurOnSubmit={false}
                 placeholderTextColor="#888"
                 returnKeyType="next"
@@ -996,7 +1047,7 @@ const renderSync = () => {
           <View style={[styles.header, { backgroundColor: themeColors.card }]}>
             <View style={styles.headerTopRow}>
               <Text style={[styles.titleSmall, { color: themeColors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                {title}
+                {title}{areaName ? `: ${areaName}` : ""}
               </Text>
               <View style={styles.topRight}>
                 <View style={{ marginRight: 4 }}>
@@ -1589,5 +1640,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.25)",
     zIndex: 1000,
+  },
+  innerMarker: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4, // grosor del marcador
+    backgroundColor: "#ed4341", // cámbialo al color del tema si deseas
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
   },
 });
