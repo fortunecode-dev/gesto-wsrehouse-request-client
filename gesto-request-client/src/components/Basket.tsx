@@ -129,7 +129,11 @@ export default function Basket({ title, url, help }: BasketProps) {
   const inputsRef = useRef<any[]>([]);
   const listRef = useRef<FlatList<any>>(null);
   const productosRef = useRef(productos);
-
+  const clear = async () => {
+    await AsyncStorage.removeItem('DESGLOSE_DATA')
+    await AsyncStorage.removeItem('CASA_DATA')
+    await AsyncStorage.removeItem('DEUDA_DATA')
+  }
 
   // 🔄 Health check cada 5 segundos
   useEffect(() => {
@@ -295,15 +299,6 @@ export default function Basket({ title, url, help }: BasketProps) {
   /* ============================
      Efectos de carga y sincronización
      ============================ */
-  useEffect(() => {
-    const clear = async () => {
-      await AsyncStorage.removeItem('DESGLOSE_DATA')
-      await AsyncStorage.removeItem('CASA_DATA')
-      await AsyncStorage.removeItem('DEUDA_DATA')
-    }
-    clear()
-
-  }, [productos])
 
 
   /**
@@ -482,6 +477,7 @@ export default function Basket({ title, url, help }: BasketProps) {
     if ((url == "casa" || url == "area2area") && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
     if (url === "checkout") setHasReported(false);
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, quantity: nuevaCantidad } : p)));
+    clear()
   };
 
   /**
@@ -505,6 +501,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         return { ...p, counts, quantity: total ? String(total) : "" };
       })
     );
+    clear()
   }, [casaMap, deudaMap]);
 
   /**
