@@ -6,7 +6,7 @@ import { router } from "expo-router";
 
 export const getProductsSaved = async (url) => {
   try {
-    if (url == "casa")
+    if (url == "casa"||url=="deuda" )
       url = "final"
     const areaId = await AsyncStorage.getItem('selectedLocal');
     const userId = await AsyncStorage.getItem('selectedResponsable');
@@ -33,6 +33,7 @@ export const getPendingTransfer = async () => {
   } catch (error) {
     console.log("getProductsSaved error return", error);
     AsyncStorage.removeItem("selectedLocal")
+    AsyncStorage.removeItem("LOCAL_DENOMINATION")
     AsyncStorage.removeItem("selectedResponsable")
     router.push({ pathname: "/" })
     return []
@@ -50,6 +51,7 @@ export const receiveTransfer = async () => {
   } catch (error) {
     console.log("getProductsSaved error return", error);
     AsyncStorage.removeItem("selectedLocal")
+    AsyncStorage.removeItem("LOCAL_DENOMINATION")
     AsyncStorage.removeItem("selectedResponsable")
     router.push({ pathname: "/" })
     return false
@@ -79,6 +81,9 @@ export const syncProducts = async (url: string, productos: any[]) => {
     const userId = await AsyncStorage.getItem('selectedResponsable');
     const areaId = await AsyncStorage.getItem('selectedLocal');
     await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
+    await AsyncStorage.removeItem('DESGLOSE_DATA')
+    await AsyncStorage.removeItem('CASA_DATA')
+    await AsyncStorage.removeItem('DEUDA_DATA')
     return true;
   } catch (error) {
     console.log("syncProducts return", url, error)
@@ -208,10 +213,12 @@ export const postFinal = async (productos) => {
 
     // leer raw desde storage
     const casaRaw = await AsyncStorage.getItem("CASA_DATA");
+    const deudaRaw = await AsyncStorage.getItem("DEUDA_DATA");
     const desgloseRaw = await AsyncStorage.getItem("DESGLOSE_DATA");
 
     // parsear y validar ambos
     let casaParsed: any = null;
+    let deudaParsed: any = null;
     let desgloseParsed: any = null;
 
     try {
@@ -219,6 +226,12 @@ export const postFinal = async (productos) => {
     } catch (e) {
       // parse error -> invalida
       casaParsed = null;
+    }
+     try {
+      deudaParsed = deudaRaw ? JSON.parse(deudaRaw) : null;
+    } catch (e) {
+      // parse error -> invalida
+      deudaParsed = null;
     }
     try {
       desgloseParsed = desgloseRaw ? JSON.parse(desgloseRaw) : null;
@@ -228,6 +241,9 @@ export const postFinal = async (productos) => {
     // Validaciones estrictas: si alguna falla -> retornar false
     if (!isValidCasaObject(casaParsed)) {
       casaParsed = null
+    }
+    if (!isValidCasaObject(deudaParsed)) {
+      deudaParsed = null
     }
     if (!isValidDesgloseObject(desgloseParsed)) {
       desgloseParsed = null
@@ -241,6 +257,7 @@ export const postFinal = async (productos) => {
       areaId,
       userId,
       casa: casaParsed,
+      deuda: deudaParsed,
       desglose: desgloseParsed,
       productos
     });

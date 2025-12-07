@@ -237,8 +237,11 @@ export default function Caja() {
   const muestraAlertaDesglose = Number(sumaDenominaciones) < Number(liquidacion);
 
   // Botón atrás
-  async function handleBack(): Promise<void> {
+  async function saveDesglose(): Promise<void> {
     await saveDesgloseTotals(cantidades, exchangeRates);
+    router.push({ pathname: "/(tabs)/final" });
+  }
+  async function back() {
     router.push({ pathname: "/(tabs)/final" });
   }
 
@@ -327,7 +330,7 @@ export default function Caja() {
               </View>
               <View style={{ flex: 1, alignItems: "flex-end" }}>
                 <Text style={[styles.totalLabel, { color: themeColors.mutted }]}>Liquidación</Text>
-                <Text style={[styles.totalValue, { color: themeColors.primary }]}>${Math.max(Number(sumaDenominaciones),Number(liquidacion)).toFixed(2)}</Text>
+                <Text style={[styles.totalValue, { color: themeColors.primary }]}>${Math.max(Number(sumaDenominaciones), Number(liquidacion)).toFixed(2)}</Text>
               </View>
             </View>
 
@@ -419,14 +422,23 @@ export default function Caja() {
                 <Text style={[styles.footerLabel, { color: themeColors.mutted }]}>Total</Text>
                 <Text style={[styles.footerValue, { color: themeColors.primary }]}>${Number(sumaDenominaciones).toFixed(2)}</Text>
               </View>
+              <View style={{flexDirection:"row"}}>
+                <TouchableOpacity
+                  onPress={back}
+                  style={[styles.button, { backgroundColor: themeColors.primary }]}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>Atrás</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={saveDesglose}
+                  style={[styles.button, { backgroundColor: themeColors.success }]}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.buttonText}>Guardar</Text>
+                </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity
-                onPress={handleBack}
-                style={[styles.button, { backgroundColor: themeColors.primary }]}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.buttonText}>Atrás</Text>
-              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
@@ -535,6 +547,7 @@ const styles = StyleSheet.create({
   footerValue: { fontSize: 20, fontWeight: "800" },
 
   button: {
+    marginInline:3,
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: 10,

@@ -378,6 +378,7 @@ export default function LocalScreen() {
                   onPress={async () => {
                     await AsyncStorage.removeItem('CAJA_DATA');
                     await AsyncStorage.removeItem('CASA_DATA');
+                    await AsyncStorage.removeItem('DEUDA_DATA');
                     await AsyncStorage.removeItem('INITIAL_COUNTS');
                     await AsyncStorage.removeItem('DESGLOSE_DATA');
                     await AsyncStorage.setItem('LOCAL_DENOMINATION', `${item.local?.name} - ${item.name}`);

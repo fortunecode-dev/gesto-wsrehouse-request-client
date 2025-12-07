@@ -51,7 +51,8 @@ export default function ModalSeleccionLocal({
     const load = async () => {
       setLoadingAreas(true);
       const a = await getAreas();
-      setAreas(a);
+      const localActual=await AsyncStorage.getItem("selectedLocal")
+      setAreas(a.filter(item=>item.id!=localActual));
 
       const savedArea = (await AsyncStorage.getItem("selectedToLocal")) || "";
       const savedResponsable =

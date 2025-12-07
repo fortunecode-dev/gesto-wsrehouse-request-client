@@ -46,7 +46,7 @@ const cantidadRegex = /^\d*[.,]?\d{0,2}$/;
 const COUNT_TIMES_KEY = "COUNT_TIMES";
 const POS_MODE_KEY = "POS_MODE";
 const CASA_DATA_KEY = "CASA_DATA";
-const INITIAL_COUNTS_KEY = "INITIAL_COUNTS";
+const DEUDA_DATA_KEY = "DEUDA_DATA";
 
 /** Props del componente */
 interface BasketProps {
@@ -101,6 +101,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [hasReported, setHasReported] = useState(false);
   const [casaMap, setCasaMap] = useState<Record<string, string>>({});
+  const [deudaMap, setDeudaMap] = useState<Record<string, string>>({});
   const [helpVisible, setHelpVisible] = useState(false);
   const [trying, setTrying] = useState(false);
   const [serverOnline, setServerOnline] = useState<boolean>(true);
@@ -113,14 +114,13 @@ export default function Basket({ title, url, help }: BasketProps) {
   const [selectedLocal, setSelectedLocal] = useState<string>('');
   const [responsable, setSelectedResponsable] = useState<string>('');
   const [modalVisible, setModalVisible] = useState<boolean>(false);
-  const [localModalVisible, setLocalModalVisible] = useState<boolean>(false);
-  const [areas, setAreas] = useState<any[] | null>(null);
   const [query, setQuery] = useState("");
   const [countTimes, setCountTimes] = useState<number>(1);
   const [posModeEnabled, setPosModeEnabled] = useState<boolean>(false);
   // Validaciones/flags usados en la UI
   const [isDesgloseValid, setIsDesgloseValid] = useState<boolean>(false);
   const [isCasaValid, setIsCasaValid] = useState<boolean>(false);
+  const [isDeudaValid, setIsDeudaValid] = useState<boolean>(false);
 
   // Loader interno para la lista
   const [loadingItems, setLoadingItems] = useState<boolean>(false);
@@ -168,6 +168,10 @@ export default function Basket({ title, url, help }: BasketProps) {
               syncingRef.current = true;
               try {
                 await syncProducts(url, productosRef.current);
+                const [desgOk, casaOk, deudaOk] = await Promise.all([validateDesglose(), validateCasa(), validateDeuda()]);
+                setIsDesgloseValid(Boolean(desgOk));
+                setIsCasaValid(Boolean(casaOk));
+                setIsDeudaValid(Boolean(deudaOk));
                 setSyncStatus("success");
               } catch {
                 setSyncStatus("error");
@@ -263,7 +267,31 @@ export default function Basket({ title, url, help }: BasketProps) {
       return false;
     }
   };
+  const validateDeuda = async (): Promise<boolean> => {
+    try {
+      const raw = await AsyncStorage.getItem(DEUDA_DATA_KEY);
+      if (!raw) return false;
 
+      const parsed = JSON.parse(raw);
+      const savedAtRaw = parsed?.meta?.savedAt ?? parsed?.savedAt;
+      if (!savedAtRaw) return false;
+
+      const savedDate = new Date(savedAtRaw);
+      if (Number.isNaN(savedDate.getTime())) return false;
+
+      const now = new Date();
+
+      // Comparar solo año/mes/día (misma jornada)
+      const sameDay =
+        savedDate.getFullYear() === now.getFullYear() &&
+        savedDate.getMonth() === now.getMonth() &&
+        savedDate.getDate() === now.getDate();
+
+      return sameDay;
+    } catch {
+      return false;
+    }
+  };
   /* ============================
      Efectos de carga y sincronización
      ============================ */
@@ -280,8 +308,12 @@ export default function Basket({ title, url, help }: BasketProps) {
     const timer = setTimeout(async () => {
       try {
         setSyncStatus("loading");
-        if (url !== "casa" && url !== "area2area") {
+        if (url !== "casa" && url !== "area2area" && url !== "deuda") {
           const syncSuccessful = await syncProducts(url, productos);
+          const [desgOk, casaOk, deudaOk] = await Promise.all([validateDesglose(), validateCasa(), validateDeuda()]);
+          setIsDesgloseValid(Boolean(desgOk));
+          setIsCasaValid(Boolean(casaOk));
+          setIsDeudaValid(Boolean(deudaOk));
           if (syncSuccessful) {
             setSyncStatus("success");
           } else {
@@ -347,18 +379,15 @@ export default function Basket({ title, url, help }: BasketProps) {
 
       // Obtener productos desde servicio
       const saved = await getProductsSaved(url);
-      if (url === "area2area") {
-        const locals = await getAreas();
-        if (!locals) return router.push({ pathname: "/" });
-        setAreas(locals);
-      }
       // Construir casaMap { id: quantity }
       let casaMapLocal: Record<string, string> = {};
       try {
         const casaRaw = await AsyncStorage.getItem(CASA_DATA_KEY);
         if (casaRaw) {
           const parsed = JSON.parse(casaRaw);
+          console.log("casaParsed", parsed);
           const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+          console.log("items", items);
           for (const it of items) {
             if (it && it.id != null) {
               const q = it.quantity ?? "";
@@ -369,6 +398,23 @@ export default function Basket({ title, url, help }: BasketProps) {
       } catch (e) {
         // si no parsea, dejamos el mapa vacío (no rompemos)
         casaMapLocal = {};
+      }
+      let deudaMapLocal: Record<string, string> = {};
+      try {
+        const deudaRaw = await AsyncStorage.getItem(DEUDA_DATA_KEY);
+        if (deudaRaw) {
+          const parsed = JSON.parse(deudaRaw);
+          const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+          for (const it of items) {
+            if (it && it.id != null) {
+              const q = it.quantity ?? "";
+              deudaMapLocal[String(it.id)] = String(q).replace(",", ".");
+            }
+          }
+        }
+      } catch (e) {
+        // si no parsea, dejamos el mapa vacío (no rompemos)
+        deudaMapLocal = {};
       }
 
       // Prefill: si estamos en url 'casa' usamos casaMap, sino cargamos productos normalmente
@@ -386,6 +432,18 @@ export default function Basket({ title, url, help }: BasketProps) {
           base.counts = counts;
           base.quantity = total ? String(total) : counts[0] || "0";
         }
+        if (url === "deuda") {
+          const qFromDeuda = deudaMapLocal[String(p.id)];
+          const qNormalized =
+            qFromDeuda !== undefined && qFromDeuda !== null && qFromDeuda !== ""
+              ? String(Number(String(qFromDeuda).replace(",", ".")))
+              : "0";
+          const counts = new Array(ctForShape ?? countTimes).fill("");
+          counts[0] = qNormalized;
+          const total = sumCounts(counts);
+          base.counts = counts;
+          base.quantity = total ? String(total) : counts[0] || "0";
+        }
         return base;
       });
 
@@ -394,6 +452,7 @@ export default function Basket({ title, url, help }: BasketProps) {
       setProductos(finalShaped);
       setHasReported(saved.some((p: any) => !!p.reported));
       setCasaMap(casaMapLocal);
+      setDeudaMap(deudaMapLocal);
     } catch (e) {
       Alert.alert("Error cargando los productos", String(e));
     } finally {
@@ -421,9 +480,14 @@ export default function Basket({ title, url, help }: BasketProps) {
    * actualizarCantidadParcial
    * Actualiza la celda específica dentro de counts (columna) y recalcula total local.
    */
-  const actualizarCantidadParcial = (id: string, countIndex: number, nuevaCantidad: string, maxQuantity = null) => {
+  const actualizarCantidadParcial = useCallback((id: string, countIndex: number, nuevaCantidad: string, maxQuantity = null) => {
     if (!cantidadRegex.test(nuevaCantidad)) return;
-    if (url == "casa" && maxQuantity != null && parseFloat(maxQuantity) < parseFloat(nuevaCantidad)) return;
+
+    let max = parseFloat(maxQuantity)
+    if (url == "casa") max -= parseFloat(deudaMap[id] ?? "0")
+    if (url == "deuda") max -= parseFloat(casaMap[id] ?? "0")
+
+    if (url == "casa" && maxQuantity != null && max < parseFloat(nuevaCantidad)) return;
     setProductos((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
@@ -433,7 +497,7 @@ export default function Basket({ title, url, help }: BasketProps) {
         return { ...p, counts, quantity: total ? String(total) : "" };
       })
     );
-  };
+  }, [casaMap, deudaMap]);
 
   /**
    * handleSubmit / handleSubmitMulti
@@ -526,11 +590,13 @@ export default function Basket({ title, url, help }: BasketProps) {
   const income = useMemo(() => {
     return productos.reduce((acc, item) => {
       const casaQty = Number(casaMap[item.id] ?? 0);
+      const deudaQty = Number(deudaMap[item.id] ?? 0);
       const monto = Number(item.monto || 0);
       const price = Number(item.price || 0);
-      return acc + monto - casaQty * price;
+      console.log({ item, casaQty, deudaQty });
+      return acc + monto - casaQty * price - deudaQty * price;
     }, 0);
-  }, [productos, casaMap]);
+  }, [productos, casaMap, deudaMap]);
   const handleAction = useCallback(async (accion: string) => {
     try {
       if (accion === "Guardar Final") {
@@ -547,8 +613,8 @@ export default function Basket({ title, url, help }: BasketProps) {
         })
         if (!desgOk || !importeOk) {
           const reasons: string[] = [];
-          if (!desgOk) reasons.push("el desglose no es válido");
-          if (!importeOk) reasons.push("el importe es menor que 0");
+          if (!desgOk && posModeEnabled) reasons.push("el desglose no es válido");
+          if (!importeOk && posModeEnabled) reasons.push("el importe es menor que 0");
 
           const reasonText = reasons.join(" y ");
           const text = `Advertencia: ${reasonText}. ¿Deseas continuar y ejecutar "${accion}" de todos modos?`;
@@ -564,13 +630,14 @@ export default function Basket({ title, url, help }: BasketProps) {
       console.warn("handleAction unexpected error:", e);
       setConfirmState({ visible: true, accion, text: `¿Desea ${accion}?` });
     }
-  }, [income, productos]);
+  }, [income, productos, posModeEnabled]);
   const comision = useMemo(() => {
     return productos.reduce((acc, item) => {
-      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0)
+
+      const cantidadParaComision = Number(item.sold ?? 0) - Number(casaMap[item.id] ?? 0) - Number(deudaMap[item.id] ?? 0)
       return acc + cantidadParaComision * item.comision;
     }, 0);
-  }, [productos]);
+  }, [productos, casaMap, deudaMap]);
   /**
    * validateDesglose
    * Lee DESGLOSE_DATA de AsyncStorage y compara totals.totalCaja con el importe calculado en esta vista (income).
@@ -631,10 +698,11 @@ export default function Basket({ title, url, help }: BasketProps) {
         setPosModeEnabled(posRaw ? JSON.parse(posRaw) : false);
 
         // Ejecutar validaciones en paralelo
-        const [desgOk, casaOk] = await Promise.all([validateDesglose(), validateCasa()]);
+        const [desgOk, casaOk, deudaOk] = await Promise.all([validateDesglose(), validateCasa(), validateDeuda()]);
         if (!isActive) return;
         setIsDesgloseValid(Boolean(desgOk));
         setIsCasaValid(Boolean(casaOk));
+        setIsDeudaValid(Boolean(deudaOk));
 
         // Cargar productos (prefil desde CASA si aplica)
         if (!selectedLocal?.length && url == "area2area") return
@@ -713,9 +781,39 @@ export default function Basket({ title, url, help }: BasketProps) {
 
       const meta = { savedAt: new Date().toISOString() };
       await AsyncStorage.setItem(CASA_DATA_KEY, JSON.stringify({ meta, items }));
-      await AsyncStorage.setItem(INITIAL_COUNTS_KEY, JSON.stringify(items));
 
       Alert.alert("Guardado", "Los datos de Casa y las cantidades iniciales se guardaron correctamente.");
+      await AsyncStorage.removeItem("DESGLOSE_DATA")
+      router.push({ pathname: "/(tabs)/final" });
+      setIsCasaValid(true);
+    } catch (e) {
+      Alert.alert("Error", "No se pudo guardar Casa: " + String(e));
+    }
+  };
+  const saveDeuda = async () => {
+    try {
+      const items = productos.reduce((acc: { id: any; quantity: string }[], p) => {
+        // obtener quantity priorizando p.quantity; si vacío, sumar p.counts
+        let q = p.quantity;
+        if (q === undefined || q === null || q === "") {
+          if (Array.isArray(p.counts) && p.counts.length) {
+            const s = sumCounts(p.counts);
+            q = s ? String(s) : "";
+          } else {
+            q = "";
+          }
+        }
+        const n = Number(String(q).replace(",", "."));
+        if (!isNaN(n) && n > 0) {
+          acc.push({ id: p.id, quantity: String(n) });
+        }
+        return acc;
+      }, []);
+
+      const meta = { savedAt: new Date().toISOString() };
+      await AsyncStorage.setItem(DEUDA_DATA_KEY, JSON.stringify({ meta, items }));
+
+      Alert.alert("Guardado", "Los datos de Deuda se guardaron correctamente.");
       await AsyncStorage.removeItem("DESGLOSE_DATA")
       router.push({ pathname: "/(tabs)/final" });
       setIsCasaValid(true);
@@ -736,6 +834,9 @@ export default function Basket({ title, url, help }: BasketProps) {
   const onPressCasa = () => {
     router.push({ pathname: "/casa" });
   };
+  const onPressDeuda = () => {
+    router.push({ pathname: "/deuda" });
+  };
 
   /* ============================
      Flags y estilos dinámicos para botones
@@ -743,6 +844,7 @@ export default function Basket({ title, url, help }: BasketProps) {
 
   const desgloseBg = isDesgloseValid ? themeColors.success : themeColors.warning;
   const casaBg = isCasaValid ? themeColors.success : themeColors.warning;
+  const deudaBg = isDeudaValid ? themeColors.success : themeColors.warning;
   const toAreaNResponsableBg = responsable && selectedLocal ? themeColors.success : themeColors.warning;
 
   // Guardar final habilitado sólo si ambas validaciones son true y income >= 0
@@ -915,6 +1017,9 @@ export default function Basket({ title, url, help }: BasketProps) {
       )}
       {(url === "final" || url == "area2area") && (
         <Text style={{ color: themeColors.text, fontWeight: "bold" }}>{url === "final" ? "Consumido" : "Máximo"}: {item.sold}</Text>
+      )}
+      {(url === "casa" || url == "deuda") && (
+        <Text style={{ color: themeColors.text, fontWeight: "bold" }}>Máximo: {url == "casa" ? (item.sold - parseFloat(deudaMap[item.id] ?? "0")) : (item.sold - parseFloat(casaMap[item.id] ?? "0"))}</Text>
       )}
       {children}
     </View>
@@ -1111,6 +1216,18 @@ export default function Basket({ title, url, help }: BasketProps) {
                     <Text style={[styles.actionText]}>Guardar Casa</Text>
                   </TouchableOpacity>
                 )}
+                {url === "deuda" && (
+                  <TouchableOpacity
+                    onPress={saveDeuda}
+                    style={[
+                      styles.actionButton,
+                      // !hasCasaQuantities && styles.disabledButton,
+                      { backgroundColor: themeColors.primary },
+                    ]}
+                  >
+                    <Text style={[styles.actionText]}>Guardar Deuda</Text>
+                  </TouchableOpacity>
+                )}
 
                 {/* Botones según ruta */}
                 {url === "initial" && (
@@ -1193,6 +1310,16 @@ export default function Basket({ title, url, help }: BasketProps) {
                     ]}
                   >
                     <Text style={styles.actionText}>Casa</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={onPressDeuda}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: deudaBg },
+                      !isDeudaValid && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={styles.actionText}>Deuda</Text>
                   </TouchableOpacity>
                 </View>
               </View>
