@@ -81,9 +81,6 @@ export const syncProducts = async (url: string, productos: any[]) => {
     const userId = await AsyncStorage.getItem('selectedResponsable');
     const areaId = await AsyncStorage.getItem('selectedLocal');
     await axios.post(`${await API_URL()}/request/sync/${url}`, { productos, userId, areaId });
-    await AsyncStorage.removeItem('DESGLOSE_DATA')
-    await AsyncStorage.removeItem('CASA_DATA')
-    await AsyncStorage.removeItem('DEUDA_DATA')
     return true;
   } catch (error) {
     console.log("syncProducts return", url, error)

@@ -295,7 +295,15 @@ export default function Basket({ title, url, help }: BasketProps) {
   /* ============================
      Efectos de carga y sincronización
      ============================ */
+  useEffect(() => {
+    const clear = async () => {
+      await AsyncStorage.removeItem('DESGLOSE_DATA')
+      await AsyncStorage.removeItem('CASA_DATA')
+      await AsyncStorage.removeItem('DEUDA_DATA')
+    }
+    clear()
 
+  }, [productos])
 
 
   /**
