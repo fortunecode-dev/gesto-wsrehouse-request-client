@@ -14,10 +14,11 @@ import {
   View,
   Modal,
   Pressable,
+  BackHandler,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useNavigation } from "expo-router";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
 import {
@@ -96,6 +97,7 @@ export default function Basket({ title, url, help }: BasketProps) {
   /* ----------------------------
      Estado local
      ---------------------------- */
+  const navigation = useNavigation();
   const [productos, setProductos] = useState<any[]>([]);
   const [areaName, setAreaName] = useState<string>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -134,6 +136,36 @@ export default function Basket({ title, url, help }: BasketProps) {
     await AsyncStorage.removeItem('CASA_DATA')
     await AsyncStorage.removeItem('DEUDA_DATA')
   }
+  const handleExit = useCallback(
+    (e?: any) => {
+
+      // Evitar salida automática (swipe, botón de header, etc.)
+      if (url == "casa" || url == "desgloce" || url == "deuda") {
+        if (e) e.preventDefault();
+        navigation.navigate("/(tabs)/final" as never);
+      }
+      else {
+        navigation.goBack()
+      } // fallback
+      return true
+    },
+    [url, navigation]
+  );
+  useEffect(() => {
+    // Botón físico Android
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      return handleExit();
+    });
+
+    // Swipe back / header back
+    const navSub = navigation.addListener("beforeRemove", handleExit);
+
+    return () => {
+      sub.remove();
+      navSub();
+    };
+  }, [navigation, handleExit]);
+
 
   // 🔄 Health check cada 5 segundos
   useEffect(() => {

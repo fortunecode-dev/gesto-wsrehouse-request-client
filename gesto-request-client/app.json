@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pedido",
+    "name": "IPV Control",
     "userInterfaceStyle": "automatic",
     "slug": "gesto-request-client",
     "version": "2.1.0",
@@ -20,7 +20,17 @@
     },
     "owner": "fortunecode",
     "android": {
-      "package": "com.fortunecode.gestorequestclient" 
-    }
+      "package": "com.fortunecode.gestorequestclient"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon-dark.png",
+          "imageWidth": 290,
+          "backgroundColor": "#fdfaf6"
+        }
+      ]
+    ]
   }
 }
