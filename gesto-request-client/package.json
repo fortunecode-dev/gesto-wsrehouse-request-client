@@ -1,5 +1,5 @@
 {
-  "name": "IPV Control",
+  "name": "pedidos",
   "main": "expo-router/entry",
   "version": "3.0.0",
   "scripts": {
